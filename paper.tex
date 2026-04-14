@@ -1,0 +1,2341 @@
+
+\documentclass[11pt]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{amsfonts,amsbsy,amssymb,amsmath,amsthm,mathtools}
+\usepackage{graphicx}
+\usepackage[english]{babel}
+\usepackage[numbers]{natbib}
+\usepackage[colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue]{hyperref}
+\usepackage[capitalize,noabbrev]{cleveref}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{bbm}
+\usepackage[margin=1in]{geometry}
+\usepackage{enumitem}
+\usepackage{microtype}
+\usepackage{mathrsfs}
+\usepackage{bm}
+\usepackage{thmtools}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage[table]{xcolor}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{titling}
+\usepackage{setspace}
+\usepackage{etoolbox}
+
+\declaretheorem[name=Assumption,numberwithin=section]{assumption}
+\declaretheorem[name=Theorem,numberwithin=section]{theorem}
+\declaretheorem[name=Proposition,numberwithin=section]{proposition}
+\declaretheorem[name=Lemma,numberwithin=section]{lemma}
+\declaretheorem[name=Corollary,numberwithin=section]{corollary}
+\declaretheorem[name=Definition,numberwithin=section]{definition}
+\declaretheorem[name=Remark,numberwithin=section,style=remark]{remark}
+
+% ---------- Shortcuts ----------
+\newcommand{\chg}[1]{{\color{red}#1}}
+\newcommand{\review}[1]{{\color{red}\textbf{[REVIEW BY HAND: #1]}}}
+\newcommand{\refe}{\sigma}
+\newcommand{\temp}{\mu}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\1}{\mathbf{1}}
+\newcommand{\M}{\mathcal{M}}
+\newcommand{\F}{\mathcal{F}}
+\newcommand{\ac}{\mathrm{ac}}
+\newcommand{\id}{\mathrm{id}}
+\newcommand{\Win}{W^{\mathrm{in}}}
+\newcommand{\supp}{\mathrm{supp}}
+\newcommand{\Diff}{\mathrm{Diff}}
+\newcommand{\cdt}{\operatorname{LOT}}
+
+% ---------- Page and heading style ----------
+\setlength{\parindent}{1em}
+\setlength{\parskip}{0pt}
+\onehalfspacing
+\allowdisplaybreaks
+
+\titleformat{\section}[block]
+  {\normalfont\centering\scshape\large}
+  {\thesection.}{0.6em}{}
+\titleformat{\subsection}[block]
+  {\normalfont\scshape\normalsize}
+  {\thesubsection.}{0.5em}{}
+\titleformat{\subsubsection}[runin]
+  {\normalfont\itshape}
+  {}{0pt}{}
+  [.] 
+\titlespacing*{\section}{0pt}{1.4\baselineskip}{0.8\baselineskip}
+\titlespacing*{\subsection}{0pt}{1.1\baselineskip}{0.5\baselineskip}
+\titlespacing*{\subsubsection}{0pt}{0.8\baselineskip}{0.5em}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[C]{\footnotesize\scshape Reservoir Computing on LOT-Embedded Measure-Valued Dynamical Systems}
+\fancyhead[L,R]{\footnotesize\thepage}
+\renewcommand{\headrulewidth}{0pt}
+\fancypagestyle{plain}{%
+  \fancyhf{}
+  \fancyfoot[C]{\thepage}
+  \renewcommand{\headrulewidth}{0pt}}
+
+\pretitle{\begin{center}\bfseries\large\MakeUppercase}
+\posttitle{\par\end{center}\vspace{0.6em}}
+\preauthor{\begin{center}\normalsize}
+\postauthor{\par\end{center}\vspace{0.8em}}
+\predate{}
+\postdate{}
+
+% ---------- Title & Authors ----------
+\title{Reservoir Computing on LOT-Embedded Measure-Valued Dynamical Systems}
+\author{
+  First Author$^{1}$\thanks{Correspondence: first.last@uni.edu}\quad
+  Second Author$^{2}$\quad
+  Third Author$^{1,3}$\\[0.5ex]
+  {\small $^{1}$Department/Institute, University, City, Country}\\
+  {\small $^{2}$Company/Institute, City, Country}\\
+  {\small $^{3}$Center/Lab, University, City, Country}
+}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+
+Many dynamical systems are naturally represented as evolving probability measures or point clouds. Despite this, traditional forecasting strategies typically assume that data is well represented as vectors in Euclidean space. This creates tension between the natural geometry of the data, which is best described by the quadratic Wasserstein metric, and the geometry assumed by standard forecasting architectures. In this paper we formulate a forecasting pipeline that resolves this mismatch by first lifting each measure to a linearized optimal transport (LOT) coordinate system relative to a fixed reference measure $\sigma$, and then learning the induced dynamics with a reservoir computer. We prove that, when the underlying dynamics satisfy the continuity equation, LOT velocities coincide with pullbacks of the Eulerian velocity field, so that predicting in LOT coordinates is equivalent to predicting the true velocity field. We then show that echo state networks can approximate the Koopman action on LOT observables to arbitrary precision and that errors in $L^2(\sigma)$ control reconstruction errors in Wasserstein space. Finally, we validate the framework empirically on benchmark measure-valued dynamical systems, where LOT-based RC forecasting significantly outperforms direct particle-level forecasting across a wide range of reference measures, discretizations, and reservoir scales.  
+\end{abstract}
+
+
+% =========================
+\section{Introduction}
+
+Forecasting is easiest when the evolving state can be represented in coordinates that reflect the true geometry of the data. For many systems of interest, however, the state at time $t$ is not naturally a vector in $\R^n$, but a probability measure $\mu_t \in \mathcal{P}_2(\R^d)$ or a point cloud sampled from such a measure. In weather prediction, ensemble forecasts represent atmospheric uncertainty as evolving point clouds. In fluid dynamics, particle methods track mass transport through empirical measures \cite{benamou2000computational}. Image analysis pipelines increasingly represent textures and histograms as probability measures for tasks such as texture synthesis and domain adaptation \cite{kolouri2017optimal,rubner2000earth}. Medical imaging applications use optimal transport to analyze pathology and phenotype variation \cite{wang2010optimal,basu14}. 
+
+These applications share a common mathematical structure: the state at each time is not a fixed-dimensional vector but a probability measure, and the natural geometry is the 2-Wasserstein distance $W_2$ from optimal transport theory \cite{villani2008optimal,ambrosio2008gradient}. This geometry respects mass conservation and captures the cost of moving probability mass, making it well-suited for physical systems \cite{PC19}. However, the space $(\mathcal{P}_2(\mathbb{R}^d), W_2)$ is infinite-dimensional and non-Euclidean, precluding direct application of standard time-series forecasting methods designed for $\mathbb{R}^n$. As a result, standard Euclidean-based forecasting architectures operate in coordinates that are convenient computationally but misaligned with the underlying dynamics.
+
+We are then faced with a fundamental challenge of forecasting in this infinite-dimensional, curved space using finite-dimensional, linear tools. A natural strategy is to embed measures into a Hilbert space where standard techniques apply. Kernel mean embeddings provide one such embedding but obscure the transport geometry and complicate reconstruction of predicted measures. An alternative is linearized optimal transport (LOT), which embeds measures as displacement fields in $L^2(\sigma)$ relative to a fixed reference measure $\sigma$ \cite{wei13,kolouri2017optimal}. LOT preserves the Wasserstein geometry locally and admits natural reconstruction via pushforward maps \cite{moosmueller20, ambrosio2008gradient}, but its effectiveness for time-series forecasting---and the theoretical justification for why it should work---have not been systematically studied.
+
+Reservoir computing, particularly echo state networks (ESNs), has emerged as a powerful paradigm for learning nonlinear dynamical systems from data \cite{jaeger2001echo}. ESNs use a fixed random recurrent network with only the output layer trained, enabling efficient learning of complex temporal dependencies. Recent theoretical work has established that ESNs are universal approximators for fading-memory filters and, under suitable conditions, can exactly replicate the topology of observed dynamical systems \cite{Hart_2020}. Meanwhile, LOT has proved effective for shape analysis \cite{wei13}, classification \cite{moosmuller2020linear, khurana2022supervised, aldroubi2021partitioning}, and dimensionality reduction \cite{cloninger2023lotwassmap}, but its application to dynamical systems forecasting remains unexplored. 
+
+In this paper, we develop a framework for forecasting measure-valued time series by combining LOT embeddings with reservoir computing. Given a trajectory $(\mu_t)_{t=0}^T$ of probability measures, we embed each $\mu_t$ into $L^2(\sigma)$ via the LOT map
+\[
+\Psi(\mu_t) = T_\sigma^{\mu_t}
+\]
+where $T_\sigma^{\mu_t}$ is the optimal transport map from a fixed reference $\sigma$ to $\mu_t$ \cite{brenier1991polar,ambrosio2008gradient}. $\Psi(\mu_t)$ is therefore the field of displacement vectors that indicate how far and in what direction every particle in the fixed reference must move to match the current measure. This is the object we use as the state representation in the Hilbert space $H = L^2(\sigma; \mathbb{R}^d)$. We then define LOT velocities $\Delta_t = \Psi(\mu_{t+1}) - \Psi(\mu_t)$ and feed them into an echo state network. After a teacher-forced warm-up phase, the trained reservoir generates multi-step forecasts of LOT velocities, which we integrate and push forward through $\sigma$ to reconstruct predicted measures. This ``LOT velocity forecasting'' approach contrasts with naive ``position forecasting'' that directly predicts particle coordinates.
+
+Our first contribution is proving that LOT provides a faithful representation of measure dynamics: when measures evolve according to the continuity equation $\partial_t \mu + \nabla \cdot (v\mu) = 0$ \cite{ambrosio2008gradient,otto2001geometry}, the LOT velocity equals the pullback of the Eulerian velocity field through the transport map (Theorem~\ref{thm:lot-faithful}). Thus predicting LOT velocities is equivalent to predicting the true velocity field---no dynamical information is lost. We then show that reservoir computing can learn the Koopman action on LOT observables to arbitrary precision (Theorem~\ref{thm:velocity-approx}), and that reconstruction errors in Wasserstein space are controlled by errors in the Hilbert space (Corollary~\ref{cor:flow}). Finally, we connect our framework to the ESN embedding theory of Hart, Hook, and Dawes \cite{Hart_2020}, establishing conditions under which the trained reservoir exactly replicates the topology of the measure-valued dynamics (Corollary~\ref{cor:esn-approx}). Together, these results provide a rigorous justification for using LOT embeddings with reservoir computing.
+
+Our second contribution is evaluating the LOT+RC framework on two benchmark measure-valued dynamical systems: a swirling cluster with Hamiltonian rotation dynamics, and geodesic transport along Wasserstein geodesics between geometric shapes \cite{bonneel2011displacement}. We conduct an extensive ablation study over reference measure types, reference subsampling fractions, particle counts, and reservoir scales---comprising over 2000 experimental configurations. We introduce a temporally aligned evaluation metric based on soft dynamic time warping \cite{cuturi2017soft} that accounts for phase shifts in forecasts, and validate our distance computations using two independent backends, including debiased Sinkhorn divergences \cite{feydy2019interpolating,cuturi2013sinkhorn}. 
+
+Our experiments show that LOT velocity forecasting consistently and significantly outperforms RAW position forecasting across all tested configurations, often by an order of magnitude in Wasserstein error. The LOT approach is robust to the choice of reference measure: even generic priors such as isotropic Gaussians perform nearly as well as geometry-matched references, suggesting the method can be applied without domain-specific tuning. We find that coarser reference discretizations provide a favorable trade-off between computational cost and accuracy. Reservoir scale exhibits diminishing returns beyond $n_r = N$, and our two evaluation backends show strong agreement, confirming the validity of our metrics.
+\review{Check that every quantitative claim in this paragraph matches the final experiments and figures; the current Results section is still only a placeholder.}
+
+The remainder of this paper is organized as follows. Section~\ref{sec:prelim} reviews Wasserstein space, the continuity equation, and LOT coordinates. Section~\ref{sec:lot-faithful} develops the faithfulness theory for LOT dynamics and the associated finite-sample approximations. Section~\ref{sec:rc-theory} presents the reservoir-computing framework, approximation guarantees, and end-to-end error decomposition. Sections~\ref{sec:benchmarks} and \ref{sec:setup} describe the benchmark systems and experimental protocol. Section~\ref{sec:metrics} defines the evaluation metrics, Section~\ref{sec:results} examines the experimental results, and Section~\ref{sec:conclusion} concludes.
+
+% =========================
+\section{Preliminaries and Notation}\label{sec:prelim}
+This section collects the mathematical background needed for the rest of the paper. We begin with the metric geometry of probability measures (Wasserstein space), then introduce the Linearized Optimal Transport (LOT) embedding that maps measures into a Hilbert space, and finally we state the echo state network formally. 
+
+Let $\mathcal{P}(\R^d)$ denote the set of Borel probability measures on $\R^d$, and let
+\[
+\mathcal{P}_2(\R^d):=\left\{\mu\in\mathcal{P}(\R^d): \int_{\R^d}\|x\|^2\,d\mu(x)<\infty\right\}.
+\]
+denote the subset of measures with finite second moments. We write $\mu\ll\mathcal{L}^d$ for absolute continuity with respect to Lebesgue measure and set $\mathcal{P}_{\mathrm{ac}}(\R^d):=\{\mu\in\mathcal{P}_2(\R^d):\mu\ll\mathcal{L}^d\}$. Absolute continuity will be a requirement on the reference measure used to define the LOT embedding as it guarantees uniqueness of optimal transport maps via Brenier's theorem (Section~\ref{sec:prelim-brenier}).
+
+
+For a measurable map $T:\R^d\to\R^d$, the pushforward $T_\sharp\mu$ is defined by $(T_\sharp\mu)(A)=\mu(T^{-1}(A))$ for Borel sets $A$. For $\mu,\nu\in\mathcal{P}(\R^d)$, let $\Pi(\mu,\nu)$ denote the set of couplings.   For $\mu,\nu\in\mathcal{P}_2(\R^d)$, the quadratic Wasserstein distance is
+\begin{equation}\label{eq:W2}
+W_2^2(\mu,\nu)
+:=\inf_{\pi\in\Pi(\mu,\nu)}\int_{\R^d\times\R^d}\|x-y\|^2\,d\pi(x,y).
+\end{equation}
+The space $(\mathcal{P}_2(\R^d),W_2)$ is a complete, separable metric geodesic space. 
+
+\paragraph{Benamou--Brenier motivation.}
+The metric $W_2$ admits a dynamical characterization that is central to our framework: the geodesic between $\mu_0$ and $\mu_1$ minimizes the integrated kinetic energy $\int_0^1\|v_t\|_{L^2(\mu_t)}^2\,dt$ over all pairs $(\mu_t,v_t)$ solving the continuity equation \cite{benamou2000computational}. This dynamical viewpoint, in which distributions evolve via velocity fields motivates our use of LOT velocities as inputs to the reservoir.
+
+\subsubsection*{Continuity equation and Lagrangian flow}\label{sec:prelim-continuity}
+
+The dynamics we wish to forecast take the form of time-indexed curves of probability measures. The continuity equation provides the differential description of how such curves evolve.
+
+An absolutely continuous curve $(\mu_t)_{t\in[0,T]}\subset(\mathcal{P}_2(\R^d),W_2)$ admits a (minimal) velocity field $v_t\in L^2(\mu_t;\R^d)$ solving the continuity equation
+\begin{equation}\label{eq:continuity}
+\partial_t \mu_t + \nabla\cdot(v_t\,\mu_t)=0
+\end{equation}
+expressing conservation of mass. 
+
+When $v_t$ is sufficiently regular, the associated Lagrangian flow map $X_t$ solves
+\begin{equation}\label{eq:flow-map}
+\frac{d}{dt}X_t(x)=v_t\bigl(X_t(x)\bigr),\qquad X_0(x)=x,
+\end{equation}
+and the curve is generated by pushforward: $\mu_t=(X_t)_\sharp\mu_0$.
+
+By \cite[Theorem~8.3.1 and Proposition~8.4.6]{ambrosio2008gradient}, we connect optimal transport maps to the velocity field along an absolutely continuous curve by the following tangent-vector characterization. For $\mu_t$-a.e.\ $x$,
+\begin{equation}\label{eq:local-transport-prelim}
+\lim_{h\to 0}\frac{T_{\mu_t}^{\mu_{t+h}}(x)-x}{h}=v_t(x)
+\quad\text{in }L^2(\mu_t),
+\end{equation}
+equivalently,
+\begin{equation}\label{eq:euler-approx-prelim}
+T_{\mu_t}^{\mu_{t+h}}=\mathrm{id}+h\,v_t+o(h)\quad\text{in }L^2(\mu_t)\qquad(h\to 0),
+\end{equation}
+
+\textcolor{red}{check error rate - be exact}
+These equations are the foundation for the LOT velocity representation used throughout this paper: the optimal transport map between two nearby measures on a smooth curve approximates the identity plus a small velocity perturbation. 
+
+\subsubsection*{Optimal transport maps and Brenier regularity}\label{sec:prelim-brenier}
+
+The existence and uniqueness of the optimal transport maps are guaranteed by the following results. 
+
+Assume $\sigma\in\mathcal{P}_{\mathrm{ac}}(\R^d)$ and $\mu\in\mathcal{P}_2(\R^d)$. Then there exists a unique (a.e.) optimal transport map $T_\sigma^\mu$ for the quadratic cost such that $(T_\sigma^\mu)_\sharp\sigma=\mu$.
+Moreover, $T_\sigma^\mu=\nabla\psi$ for a convex potential $\psi$ by Brenier's theorem \cite{brenier-1991,villani2008optimal,mccann-2001,ambrosio-2013}. We use the shorthand
+\[
+T_\sigma^\mu := \arg\min_{T_\sharp\sigma=\mu}\int\|x-T(x)\|^2\,d\sigma(x),
+\]
+with uniqueness understood $\sigma$-a.e. The absolutely continuity of $\sigma$ is critical for uniqueness. 
+
+\subsubsection*{LOT coordinates in $L^2(\sigma)$}\label{sec:lot-prelim}
+
+The construction of Linearized Optimal Transport embeddings, which maps the nonlinear, infinite-dimensional Wasserstein space into a flat Hilbert, enables our approach. 
+
+Fix a reference measure $\sigma\in\mathcal{P}_{\mathrm{ac}}(\R^d)$. The Linearized Optimal Transport (LOT) coordinates of $\mu\in\mathcal{P}_2(\R^d)$ relative to $\sigma$ are defined by the optimal transport map
+\begin{equation}\label{eq:lot-coords-prelim}
+u := T_\sigma^\mu \in H := L^2(\sigma;\R^d).
+\end{equation}
+Each probability measure $\mu$ is represented by the function $T_\sigma^\mu$ that pushes the reference $\sigma$ onto $\mu$.  Since $T_\sigma^\mu\in L^2(\sigma;\R^d)$ by the finite second-moment assumption, this map takes values in a Hilbert space $H$. 
+
+Given $\mu,\nu\in\mathcal{P}_2(\R^d)$, we use the LOT distance (relative to $\sigma$)
+\begin{equation}\label{eq:lot-distance-prelim}
+W_{2,\sigma}^{\mathrm{LOT}}(\mu,\nu):=\|T_\sigma^\mu-T_\sigma^\nu\|_{L^2(\sigma)}.
+\end{equation}
+A natural question is when this Hilbert-space distance faithfully represents the true Wasserstein distance $W_2(\mu,\nu)$. Under the (exact) Lagrangian compatibility regime introduced in Section~\ref{sec:ref-compat}, this distance is an isometric surrogate for $W_2$ along the dynamical family; under $\varepsilon$-compatibility it is an almost-isometry (Section~\ref{sec:finite-sample}).
+
+\paragraph{Convention note (centered vs.\ uncentered LOT).}
+Some literature defines the LOT embedding as $T_\sigma^\mu-\mathrm{id}$, where $\mathrm{id}$ denotes the identity map. In this paper we take the uncentered convention \eqref{eq:lot-coords-prelim}, since Sections~\ref{sec:lot-faithful}--\ref{sec:rc-theory} use differences $u_{t+1}-u_t$ to represent velocities. When convenient (e.g.\ for injectivity
+statements), we may also consider the centered chart $\Psi(\mu):=T_\sigma^\mu-\mathrm{id}$, which differs only by a fixed translation in $H$.
+
+\subsubsection*{Discrete particle approximation and barycentric projection}\label{sec:prelim-discrete} 
+In practice, we never observe continuous probability measures directly. Instead, we work with finite samples drawn from them. Here, we describe how the theoretical LOT framework translates into concrete finite-dimensional computations.
+
+Given samples $\{y_j^{(t)}\}_{j=1}^N\subset\R^d$ with empirical measure
+\[
+\hat\mu_{t,N}:=\frac1N\sum_{j=1}^N\delta_{y_j^{(t)}},
+\]
+and reference samples $\{x_i\}_{i=1}^m\subset\R^d$ with
+\[
+\hat\sigma_m:=\frac1m\sum_{i=1}^m\delta_{x_i},
+\]
+we compute a discrete quadratic OT plan $\gamma\in\R_+^{m\times N}$ minimizing $\sum_{i,j}\|x_i-y_j^{(t)}\|^2\gamma_{ij}$ subject to the marginal constraints
+\[
+\sum_{j=1}^N\gamma_{ij}=\frac1m\quad(\forall\, i),\qquad
+\sum_{i=1}^m\gamma_{ij}=\frac1N\quad(\forall\, j).
+\]
+The solution $\gamma$ is a coupling matrix specifying how much mass flows from each reference point $x_i$ to each target point $y_j^{(t)}$. However, a coupling is not a map. To obtain a map (as required by the LOT framework), we apply the barycentric projection.
+
+The barycentric projection estimator of the OT map is then defined on the support
+$\{x_i\}_{i=1}^m$ by
+\begin{equation}\label{eq:baryproj-prelim}
+\hat u_t(x_i) := \hat T_{\hat\sigma_m}^{\hat\mu_{t,N}}(x_i)
+:= \frac{\sum_{j=1}^{N} y_j^{(t)}\,\gamma_{ij}}{\sum_{j=1}^{N}\gamma_{ij}},
+\qquad i=1,\dots,m.
+\end{equation}
+For each reference point $x_i$, we compute the weighted average of the target points it is coupled to under the optimal plan. When $\hat\sigma_m$ has uniform weights and $\sum_{j}\gamma_{ij}=1/m$, this simplifies to $\hat u_t(x_i)=m\sum_{j=1}^N y_j^{(t)}\gamma_{ij}$.
+
+\paragraph{Finite-dimensional representation.}
+For computational purposes, we flatten the map values into a single vector. For $d=2$, we stack the values $\hat u_t(x_i)\in\R^2$ over $i=1,\dots,m$ into a vector in $\R^{2m}$ (or $\R^{dm}$ in general). This vector is the concrete representation of the LOT coordinate $u_t$ that will be passed to the reservoir computing system. 
+
+We use the weighted Euclidean norm induced by $\hat\sigma_m$ to approximate the $L^2(\sigma)$ norm:
+\begin{equation}\label{eq:empirical-L2}
+\|u\|_{L^2(\sigma)}^2 \approx \frac1m\sum_{i=1}^m \|u(x_i)\|^2.
+\end{equation}
+This approximation connects the finite-dimensional computations back to the infinite-dimensional Hilbert-space theory. It also makes clear that the quadrature approximation improves as the number of reference points $m$ increases.
+
+
+\subsubsection*{Compatibility and approximation parameters}\label{sec:prelim-compat}
+The passage from the continuous Wasserstein-space dynamics to the discrete Hilbert-space representation introduces several sources of error. Sections~\ref{sec:ref-compat}--\ref{sec:finite-sample} provide a detailed analysis of each. Here, we introduce the key parameters that govern these errors.
+\begin{enumerate}
+\item $\varepsilon\ge 0$ to denote the (approximate) Lagrangian compatibility level of the reference $\sigma$ with the underlying flow, as formalized in Definition~\ref{def:eps-lagrangian}. This quantity measures how well the LOT maps from $\sigma$ align with the physical flow maps generating the dynamics. The special case $\varepsilon=0$ corresponds to exact compatibility (Assumption~\ref{ass:lag-compat}), under which the LOT embedding is a perfect isometry along the trajectory. 
+\item $N$ for the number of trajectory particles per time step, and $m$ for the number of reference samples used to represent $\sigma$ and evaluate $L^2$ norms. These control the statistical sampling error in the discrete OT computation
+\item $\delta t$ (or $h$) for the time step used in defining discrete velocities $\Delta_t$. This governs the temporal discretization error in approximating the continuous velocity $v_t$ by the finite difference $u_{t+1}-u_t$
+\end{enumerate}
+
+A central goal of the paper is to bound the total forecasting error as an explicit function $(\varepsilon, N, m, \delta t)$, making transparent the trade-offs between model fidelity and computational cost.
+
+
+\subsubsection*{Echo state networks and linear readouts}\label{sec:prelim-esn}
+
+Echo state networks (ESNs) are a class of recurrent neural networks in which only output layer is trained, making them particularly amenable to theoretical analysis. This is the machine learning architecture we will use to learn and forecast the embedded dynamics in the Hilbert space.
+
+Let $n\in\N$ be the reservoir dimension, $A\in\R^{n\times n}$ a reservoir matrix, $b\in\R^n$ a bias, and let $\varphi_0\in C^1(\R,\R)$ be a scalar activation function with Lipschitz constant $L_\varphi:=\sup_z|\varphi_0'(z)|\in(0,\infty)$ (e.g., $\varphi_0=\tanh$, for which $L_\varphi=1$). Write $\varphi:\R^n\to\R^n$ for the component-wise extension of $\varphi_0$.
+
+The reservoir matrix $A$ and the activation $\varphi$ together define a nonlinear dynamical system that processes input sequences; the Lipschitz constant $L_\varphi$ will play a key role in the contraction analysis that guarantees well-posedness (Section~\ref{sec:prelim-esp}).
+
+\paragraph{Hilbert-space input operator.} Since our inputs live in the infinite-dimensional space $H:=L^2(\sigma;\R^d)$ rather than in $\R^p$, the input coupling must be formulated as a bounded linear operator. Let $B:H\to\R^n$ be bounded linear. By the Riesz representation theorem, there exist test functions
+$\psi_1,\dots,\psi_n\in H$ such that
+\begin{equation}\label{eq:riesz-prelim}
+(Bu)_i=\langle \psi_i,u\rangle_{L^2(\sigma)},\qquad i=1,\dots,n.
+\end{equation}
+Each reservoir node thus computes an inner product of the input against a fixed test function, extracting a scalar "feature" of the input. In the finite-dimensional setting where inputs are vectors in $\R^{dm}$, this operator reduces to an ordinary matrix multiplication (see Eq.~\eqref{eq:rc-update-discrete-prelim} below). \\
+
+\begin{definition}[Echo state network on $H$ \cite{jaeger2001echo}]\label{def:esn-prelim}
+Given an input sequence $(u_t)_{t\ge 0}\subset H$, the reservoir state evolves as
+\begin{equation}\label{eq:rc-update-prelim}
+r_{t+1}=\varphi(A r_t + B u_t + b),\qquad y_t=W^{\mathrm{out}}r_t,
+\end{equation}
+where $W^{\mathrm{out}}\in\R^{q\times n}$ is a linear readout.
+\end{definition}
+
+Here, the new state $r_{t+1}$ combines a recurrent contribution $Ar_t$ (encoding memory of past inputs) with the current input $Bu_t$ and a bias $b$, all passed through the nonlinearity $\varphi$. The update rule~\eqref{eq:rc-update-prelim} has the following interpretation: at each time step, the reservoir state $r_t\in\R^n$ is a nonlinear, compressed summary of the input history. The output $y_t=W^{\mathrm{out}}r_t$ is a linear projection of the reservoir state. $W^{\mathrm{out}}$ is the only trained parameter, typically fit by ridge regression.  All other parameters ($A$, $B$, $b$) are drawn randomly and held fixed, which greatly simplifies both training and theoretical analysis.
+
+\paragraph{Discrete LOT velocity inputs.} In our LOT+RC pipeline, the ESN input is the discrete LOT velocity $\Delta_t:=u_{t+1}-u_t\in H$ (or its empirical analogue). This captures how the distribution changes between consecutive time steps. In the finite-dimensional stacked representation, this corresponds to an input vector in $\R^{dm}$, and the operator $B$ is realized by an ordinary matrix $W^{\mathrm{in}}\in\R^{n\times dm}$:
+\begin{equation}\label{eq:rc-update-discrete-prelim}
+r_{t+1}=\varphi(A r_t + W^{\mathrm{in}}\Delta_t + b),\qquad y_t=W^{\mathrm{out}}r_t.
+\end{equation}
+The readout $y_t$ is trained to predict the next velocity $\Delta_{t+1}$, enabling iterative multi-step forecasting in Wasserstein space.
+
+
+\subsubsection*{Echo state property and universality}\label{sec:prelim-esp}
+
+We recall standard conditions ensuring well-posedness of ESNs and universality as
+approximators of fading-memory filters \cite{jaeger2001echo,GrigoryevaOrtega2018,GononOrtega2020}.
+
+\begin{definition}[ESP and fading memory]\label{def:esp}
+Consider the driven system
+\[
+r_{t+1}=\varphi(A r_t + W^{\mathrm{in}} u_t + b),
+\]
+with inputs in a bounded set.
+The reservoir has the \emph{echo state property (ESP)} if for every bi-infinite input
+sequence $(u_t)_{t\in\mathbb Z}$ there exists a unique causal state sequence
+$(r_t)_{t\in\mathbb Z}$ solving the recursion, independent of initialization.
+It has \emph{exponential fading memory} if there exist $C>0$ and $\rho\in(0,1)$ such that
+whenever two input sequences agree on the last $T$ steps, the corresponding states satisfy
+\[
+\|r_t-\tilde r_t\|\le C\rho^T\qquad\text{for all }t.
+\]
+\end{definition}
+
+The ESP ensures that the reservoir outputs at any time depends only on the past and present inputs, not on an arbitrary initial state. Exponential fading memory further guarantees that the influence of distant past inputs decays geometrically. This is a natural and desirable property for time-series processing, as it means the reservoir automatically places more weight on recent inputs. \\
+
+\begin{proposition}[Contraction condition for ESP]\label{prop:esp}
+If
+\begin{equation}\label{eq:esp-contraction}
+L_\varphi\|A\|_2<1,
+\end{equation}
+then the reservoir has ESP and exponential fading memory, with decay rate $\rho\le L_\varphi\|A\|_2$.
+\end{proposition}
+\noindent\emph{A proof sketch appears in Appendix~\ref{app:proof-esp}.}
+
+\begin{remark}[Operator norm vs.\ spectral radius]\label{rem:esp-norm}
+A common heuristic is to rescale the spectral radius $\rho(A)$ to be $<1$ (e.g.\ $\rho(A)\approx 0.7$
+for $\tanh$). Since $\rho(A)\le\|A\|_2$, the sufficient condition \eqref{eq:esp-contraction} is stronger.
+For many random sparse constructions, the gap is modest and $\rho(A)<1$ is a useful proxy; when rigorous
+guarantees are needed, we enforce \eqref{eq:esp-contraction}. For the theoretical development in Sections~\ref{sec:lot-faithful}--\ref{sec:rc-theory}, we impose the stronger operator-norm condition \eqref{eq:esp-contraction}.
+\end{remark}
+
+\paragraph{Universality for fading-memory filters.} Let $\mathcal X$ be a compact set of bounded input sequences in $\R^p$ and let $\Phi:\mathcal X\to\R^q$ be a causal, time-invariant fading-memory filter. \\
+
+\begin{theorem}[Universality of ESNs {\cite{GrigoryevaOrtega2018}}]\label{thm:universality}
+For any $\eta>0$, there exist a reservoir dimension $n$, matrices
+$A\in\R^{n\times n}$ and $W^{\mathrm{in}}\in\R^{n\times p}$ satisfying ESP,
+a bias $b\in\R^n$, and a linear readout $W^{\mathrm{out}}\in\R^{q\times n}$
+such that the induced ESN filter $\widehat\Phi$ satisfies
+\[
+\sup_{(u_s)_{s\le t}\in\mathcal X}\|\Phi((u_s)_{s\le t})-\widehat\Phi((u_s)_{s\le t})\|<\eta.
+\]
+\end{theorem}
+
+Theorem~\ref{thm:universality} establishes that ESNs are universal approximators of fading-memory filters. That is, any causal, time-invariant filter with fading memory on a compact input domain can be approximated to arbitrary precision by an ESN with a sufficiently large reservoir and an appropriate linear readout. 
+
+
+
+% ==============================
+\section{LOT as a Faithful Representation of Dynamics}\label{sec:lot-faithful}
+
+The central question of this section is: under which conditions does the LOT embedding preserve the essential structure of measure-valued dynamics?
+
+Let $(\mu_t)_{t\ge 0} \subset \mathcal{P}_2(\R^d)$ be an absolutely continuous curve in $(\mathcal{P}_2(\R^d),W_2)$ with tangent field $v_t \in L^2(\mu_t;\R^d)$ solving the continuity equation~\eqref{eq:continuity}. As recalled in Section~\ref{sec:prelim-continuity}, the tangent-vector characterization \eqref{eq:local-transport-prelim}--\eqref{eq:euler-approx-prelim} identifies the optimal transport map between nearby measures with a first-order Euler step along $v_t$. We therefore use those preliminaries by reference rather than restating them here.
+
+\begin{remark}\label{rmk:discrete-caveat}
+In the discrete-time, finite-particle setting of Section~\ref{sec:discrete-time-lot}, the limit in~\eqref{eq:local-transport-prelim} is replaced by a finite-difference quotient at step size $\delta t > 0$, and the continuous measures $\mu_t$ are replaced by empirical measures $\hat{\mu}_t$. The resulting approximation error is controlled by the finite-sample bounds of Section~\ref{sec:finite-sample}.
+\end{remark}
+
+We fix a reference measure $\sigma \in \mathcal{P}_{\mathrm{ac}}(\R^d)$ as in Section~\ref{sec:lot-prelim} and define the LOT coordinates of $\mu_t$ by
+\begin{equation}\label{eq:lot-coords}
+  u_t := T_\sigma^{\mu_t} \in H := L^2(\sigma;\R^d).
+\end{equation}
+The curve $t \mapsto u_t$ is the LOT lift of the measure-valued curve $t \mapsto \mu_t$ into the Hilbert space $H$. Each point $u_t$ in the lifted trajectory is a function that records, for every reference location $x$ in the support of $\sigma$, where the optimal transport plan sends $x$ in order to produce $\mu_t$. 
+
+We also define the pulled-back velocity field
+\begin{equation}\label{eq:pullback-vel}
+  \widetilde{v}_t := v_t \circ u_t \in H,
+\end{equation}
+which re-expresses the Eulerian velocity field $v_t$ in $\sigma$-coordinates via the LOT map. $v_t$ is defined on the moving support of $\mu_t$, which changes at every time step, whereas $\widetilde{v}_t$ is defined on the fixed support of $\sigma$. By pulling back through $u_t$, we obtain a time-varying field on a time-invariant domain which is exactly the kind of signal a reservoir computer can process. 
+
+\subsection{Lagrangian compatibility}\label{sec:ref-compat}
+
+The LOT embedding maps measures into a Hilbert space, but there is no guarantee that this mapping preserves the dynamical structure of the underlying evolution.  If the reference $\sigma$ is poorly chosen, the LOT coordinates of $\mu_t$ may bear little relation to the physical flow that generates the trajectory.  The concept of Lagrangian compatibility formalizes the conditions under which the LOT representation is faithful to the dynamics: it requires that
+the optimal transport maps from $\sigma$ to $\mu_t$ factor through the physical Lagrangian flow.
+
+We work in the continuous-time setting of Section~\ref{sec:prelim-continuity}. Recall that the Lagrangian flow $X_t$ associated with $v_t$ solves \eqref{eq:flow-map} and satisfies $\mu_t = (X_t)_\sharp \mu_0$. To relate this flow to the LOT coordinates, we require that the reference measure is compatible with the Lagrangian evolution. 
+
+\begin{assumption}[Lagrangian compatibility]\label{ass:lag-compat}
+Let $(\mu_t)_{t\in[0,T]}$ and $v_t$ be as in Section~\ref{sec:prelim-continuity}, and let $\sigma\in\mathcal{P}_2(\R^d)$ be a reference measure. We say that $\sigma$ is Lagrangian-compatible with $(\mu_t)$ if:
+
+\begin{enumerate}[label=(\roman*)]
+\item \textbf{Brenier regularity}: $\sigma\in \mathcal{P}_{\mathrm{ac}}(\R^d)$, and for each $t\in[0,T]$ there exists a unique optimal transport map $T_\sigma^{\mu_t}$ with $(T_\sigma^{\mu_t})_\sharp \sigma = \mu_t$.
+
+\item \textbf{Flow representation}: There exists a Lagrangian flow $X_t$ of $v_t$ such that, for all $t\in[0,T]$,
+\begin{equation}\label{eq:flow-representation}
+T_\sigma^{\mu_t}(x) \;=\; X_{t,0}\bigl(T_\sigma^{\mu_0}(x)\bigr)
+\quad \text{for } \sigma\text{-a.e. } x\in\R^d.
+\end{equation}
+
+\item \textbf{Temporal regularity}: The map $t \mapsto T_\sigma^{\mu_t}$ is absolutely continuous in $L^2(\sigma;\R^d)$.
+\end{enumerate}
+\end{assumption}
+
+
+
+Condition (i) is the standard Brenier regularity ensuring existence and uniqueness of optimal maps. Condition (ii) requires that the optimal maps from $\sigma$ evolve along the Lagrangian flow generated by $v_t$, starting from $T_\sigma^{\mu_0}$. Condition (iii) guarantees that time derivatives in $L^2(\sigma)$ are well-defined. \\
+
+\begin{remark}[When Assumption~\ref{ass:lag-compat} holds]\label{rem:lag-compat}
+A canonical case is when the reference measure $\sigma$ is chosen to be the initial measure $\mu_0$ ($\sigma=\mu_0\in\mathcal{P}_{\mathrm{ac}}(\R^d)$) and $(\mu_t)$ is generated by a Benamou--Brenier optimal flow between $\mu_0$ and a target measure \cite{benamou2000computational,otto2001geometry,ambrosio2008gradient}.In this setting, one can take $X_t$ to be the optimal Lagrangian flow and $T_\sigma^{\mu_t}=X_t$, so \eqref{eq:flow-representation} holds trivially, and regularity results for Wasserstein geodesics ensure absolute continuity of $t\mapsto T_\sigma^{\mu_t}$ in $L^2(\sigma)$; see, e.g., \cite{ambrosio2008gradient,gigli-2011}.
+
+More generally, \eqref{eq:flow-representation} formalizes the idea that the chosen reference $\sigma$ is "well-behaved" with respect to the dynamics, meaning that $\sigma$ tracks the Lagrangian transport induced by $v_t$. We verify in Section~\ref{sec:benchmarks} that our two benchmark systems 
+satisfy Assumption~\ref{ass:lag-compat} for all reference measures tested.
+\review{This is a strong claim if Gaussian or barycenter references are only approximately compatible. Soften to an approximate-compatibility statement if needed.}
+\end{remark}
+
+In the reservoir computing pipeline of Section~\ref{sec:rc-theory}, the reference measure $\sigma$ is fixed throughout the entire time series and typically does not equal $\mu_0$. For instance, $\sigma$ may be chosen as a Wasserstein barycenter of the training trajectory or even as a generic prior (e.g., a Gaussian). In such cases, exact Lagrangian compatibility may not
+hold, but the flow maps $X_t$ may still be close to compatible maps. The following definition replaces the binary condition of Assumption~\ref{ass:lag-compat} with a quantitative one, allowing us to track how compatibility errors propagate through the entire pipeline. 
+
+The key idea is to introduce a "proxy" map $g_t$ that does satisfy exact compatibility, and then measure how far the true flow $X_t$ deviates from this proxy.  This approach, adapted
+from~\cite[Definition~2.2]{cloninger2023lotwassmap}, converts the compatibility question into a metric one: compatibility is not a binary property but a continuous parameter $\varepsilon$ that controls approximation quality. \\
+
+\begin{definition}[$\varepsilon$-Lagrangian compatibility]
+\label{def:eps-lagrangian}
+Let $\sigma$, $(\mu_t)$, and $v_t$ be as in
+Assumption~\ref{ass:lag-compat}. We say the system is
+\emph{$\varepsilon$-Lagrangian compatible} with respect to $\sigma$ if
+conditions (i) and (iii) of Assumption~\ref{ass:lag-compat} hold, and
+condition~(ii) is relaxed to: for each $t \in [0,T]$, there exists a map
+$g_t \colon \R^d \to \R^d$ satisfying the exact flow representation
+\begin{equation}\label{eq:exact-compat-g}
+  T_\sigma^{(g_t)_\sharp \mu_0}(x)
+  \;=\; g_t\bigl(T_\sigma^{\mu_0}(x)\bigr)
+  \quad \text{for } \sigma\text{-a.e.\ } x,
+\end{equation}
+such that
+\begin{equation}\label{eq:eps-compat}
+  \sup_{t \in [0,T]}
+  \|X_t - g_t\|_{L^2(\mu_0)} \;\leq\; \varepsilon.
+\end{equation}
+\end{definition}
+
+The map $g_t$ is an "exactly compatible proxy" for the true flow map $X_t$. It satisfies the flow representation~\eqref{eq:flow-representation} with $(g_t)_\sharp \mu_0$ in place of $\mu_t$, and \eqref{eq:eps-compat} bounds how far the true flow deviates from this proxy uniformly over $[0,T]$. $g_t$ can be thought of as the "nearest exactly compatible flow" to $X_t$. The parameter $\varepsilon$ measures the gap. When $\varepsilon = 0$, the true flow itself is compatible and Definition~\ref{def:eps-lagrangian} reduces to Assumption~\ref{ass:lag-compat}(ii).
+
+\begin{remark}\label{rem:eps-interpretation}
+The parameter $\varepsilon$ quantifies the degree to which the flow maps of the dynamical
+system deviate from exact compatibility with the fixed reference~$\sigma$. Since the flow maps $X_t$ generate $\mu_t = (X_t)_\sharp \mu_0$, requiring them to be $\varepsilon$-close to compatible maps ensures that the LOT representation faithfully tracks the dynamics up to a controlled error.
+
+The choice of reference measure directly affects $\varepsilon$, creating the practical trade-off:
+\begin{itemize}
+  \item If $\sigma = \mu_0$, exact compatibility often holds ($\varepsilon = 0$), but $\sigma$ may be a poor reference for measures $\mu_t$ that have drifted far from $\mu_0$.
+  \item A Wasserstein barycenter $\sigma = \mathrm{bar}(\mu_{t_1}, \ldots, \mu_{t_K})$ of the   training trajectory balances compatibility across all timesteps, typically achieving small but nonzero $\varepsilon$.
+  \item A generic prior (e.g., Gaussian $\sigma$) incurs larger $\varepsilon$ but requires no access to training data.
+\end{itemize}
+The finite-sample error bounds of Section~\ref{sec:finite-sample} show precisely how $\varepsilon$ enters the total approximation error of the LOT--RC pipeline.
+\end{remark}
+
+
+
+\subsection{Velocity correspondence and kinetic energy}\label{sec:velocity-correspondence}
+
+Under Lagrangian compatibility, the LOT embedding does not merely provide a convenient coordinate system but exactly preserves the velocity structure and kinetic energy of the original dynamics. This means that learning and forecasting in LOT coordinates is equivalent to learning and forecasting in Wasserstein space, with no loss of dynamical information.
+
+Under Assumption~\ref{ass:lag-compat}, the LOT coordinates evolve exactly according to the Lagrangian pullback of the Eulerian velocity field. The next result is a direct specialization of the standard Lagrangian description of absolutely continuous curves in $(\mathcal{P}_2(\R^d),W_2)$ to LOT coordinates; we state it for completeness.
+
+\begin{proposition}[LOT velocity correspondence and kinetic energy]\label{thm:lot-faithful}
+Let $(\mu_t)_{t\in[0,T]}$ and $v_t$ be as in Section~\ref{sec:prelim-continuity}, and let $\sigma$ be Lagrangian-compatible with $(\mu_t)$ in the sense of Assumption~\ref{ass:lag-compat}. Set
+\[
+u_t := T_\sigma^{\mu_t} \in H := L^2(\sigma;\R^d).
+\]
+Then:
+
+\begin{enumerate}[label=(\alph*)]
+\item \textbf{Velocity correspondence.} The LOT velocity $\dot u_t := \frac{d}{dt}u_t$ exists for a.e.\ $t$ and satisfies
+\begin{equation}\label{eq:velocity-correspondence}
+\dot u_t(x) = v_t\bigl(u_t(x)\bigr)
+\quad \text{for } \sigma\text{-a.e. } x\in\R^d.
+\end{equation}
+
+\item \textbf{Kinetic energy isometry.} For a.e.\ $t\in[0,T]$,
+\begin{equation}\label{eq:kinetic-isometry}
+\|\dot u_t\|_{L^2(\sigma)} = \|v_t\|_{L^2(\mu_t)}.
+\end{equation}
+\end{enumerate}
+\end{proposition}
+
+\begin{remark}[Lagrangian vs.\ Eulerian viewpoints]\label{rem:lag-vs-eul}
+Proposition~\ref{thm:lot-faithful} reveals that $u_t(x)$ provides a Lagrangian representation of the dynamics. For a fixed particle labeled $x$ in the reference $\sigma$, the value $u_t(x)$ is its position at time $t$, and $\dot u_t$ is its velocity. The velocity correspondence~\eqref{eq:velocity-correspondence} says that the LOT velocity $\dot u_t$ equals the Eulerian velocity field $v_t$ evaluated at the current particle position $u_t(x)$.
+
+The kinetic energy isometry~\eqref{eq:kinetic-isometry} confirms that this re-expression preserves the geometric cost of the dynamics. The $L^2(\sigma)$ norm of the LOT velocity equals the $L^2(\mu_t)$ norm of the Eulerian velocity, so distances and energies in Wasserstein space are faithfully mirrored in the Hilbert space $H$.
+\end{remark}
+
+
+\subsection{Finite-sample approximation and concentration}\label{sec:finite-sample}
+
+The velocity correspondence of Proposition~\ref{thm:lot-faithful} and the $\varepsilon$-Lagrangian compatibility framework of Definition~\ref{def:eps-lagrangian} describe the LOT embedding at the population level, where the continuous measures $\mu_t$ and $\sigma$ are
+fully accessible. In practice, however, we observe only finite particle configurations $\{y_j^{(t)}\}_{j=1}^{N} \subset \R^d$ with empirical measure $\hat{\mu}_t = \frac{1}{N}\sum_{j=1}^{N} \delta_{y_j^{(t)}}$, and the reference measure $\sigma$ is represented by $m$ samples $\{x_i\}_{i=1}^m$ with empirical measure $\hat{\sigma} = \frac{1}{m}\sum_{i=1}^{m}\delta_{x_i}$.
+
+In this subsection, we quantify how the resulting approximation error depends on both the compatibility quality $\varepsilon$ and the number of particles $N$ and $m$, providing high-probability bounds that feed directly into the reservoir computing error analysis of Section~\ref{sec:rc-theory}.
+
+The total approximation error decomposes into three terms, following the framework of~\cite{cloninger2023lotwassmap}. This decomposition reflects the three distinct stages at which approximation enters the pipeline:
+\begin{enumerate}
+    \item \textbf{LOT linearization error}: the gap between the true Wasserstein
+      distance and the LOT distance, controlled by the compatibility
+      parameter~$\varepsilon$.
+    \item \textbf{Finite-sample transport map estimation error}: the statistical
+      error from estimating the optimal transport map $T_\sigma^{\mu_t}$
+      using only $N$ samples from $\mu_t$.
+    \item \textbf{Reference discretization error}: the quadrature error from
+      evaluating $L^2(\sigma)$ norms using only $m$ reference samples.
+\end{enumerate}
+We treat each in turn, then chain them together in Theorem~\ref{thm:finite-sample-lot}. 
+
+
+\subsubsection{LOT faithfulness under approximate compatibility}
+
+The first source of error arises from approximating the Wasserstein distance with the LOT distance. Under exact Lagrangian compatibility (Assumption~\ref{ass:lag-compat}), this approximation is an isometry (Proposition~\ref{thm:lot-faithful}). Under $\varepsilon$-Lagrangian compatibility (Definition~\ref{def:eps-lagrangian}), the LOT distance is no longer exactly equal to $W_2$, but the gap can be bounded as a function of $\varepsilon$.  The following result, which builds on the framework of~\cite{cloninger2023lotwassmap}, provides the quantitative control.
+
+\begin{assumption}[Regularity conditions]\label{ass:regularity}
+Suppose the following hold:
+\begin{enumerate}[label=(\roman*)]
+  \item $\sigma \in \mathcal{P}_{\mathrm{ac}}(\Omega)$ for a compact convex
+        set $\Omega \subseteq B(0,R) \subset \R^d$, with density $f_\sigma$
+        bounded above and below by positive constants.
+  \item The initial measure $\mu_0$ has finite $p$-th moment with bound
+        $M_p$, for $p > d$ and $p \geq 4$.
+  \item There exist $a, A > 0$ such that every flow map $X_t$ satisfies
+        $a\|x\| \leq \|X_t(x)\| \leq A\|x\|$.
+  \item The system is $\varepsilon$-Lagrangian compatible with respect to
+        $\sigma$ in the sense of Definition~\ref{def:eps-lagrangian}, and
+        the flow maps $\{X_t\}_{t \in [0,T]}$ form a compact family
+        $\mathcal{H}$ with
+        $\sup_{s,t} \|X_s - X_t\|_{L^2(\mu_0)} \leq M$. \\
+\end{enumerate}
+\end{assumption}
+
+\begin{proposition}[LOT almost-isometry]\label{prop:lot-almost-isometry}
+Under Assumption~\ref{ass:regularity}, for any $s, t \in [0,T]$,
+\begin{equation}\label{eq:lot-almost-isometry}
+  \left| W_2(\mu_s, \mu_t)
+       - \|T_\sigma^{\mu_s} - T_\sigma^{\mu_t}\|_{L^2(\sigma)} \right|
+  < C_{d,p,\Omega,M_p} \, \chg{\varepsilon^{\frac{p}{6p+16d}}},
+\end{equation}
+\review{The pasted source version had $6p+16n$ in this exponent, but the proof below and the cited LOT almost-isometry bound use $6p+16d$. Currently kept $d$ here so the statement matches the proof and the later error formulas.}
+where $C_{d,p,\Omega,M_p}$ depends only on the dimension $d$, the $p$-th moment bound $M_p$, and geometry of the support $\Omega$. 
+\end{proposition}
+\noindent\emph{Proof deferred to Appendix~\ref{app:proof-lot-almost-isometry}.}
+
+\begin{remark}[Application to LOT velocities]\label{rmk:lot-vel-faithful}
+For the discrete LOT velocity
+$\Delta_t := T_\sigma^{\mu_{t+1}} - T_\sigma^{\mu_t}$, the
+bound~\eqref{eq:lot-almost-isometry} applied to consecutive times $t$ and $t+1$ gives
+\begin{equation}\label{eq:lot-vel-faithful}
+  \left| W_2(\mu_t, \mu_{t+1})
+       - \|\Delta_t\|_{L^2(\sigma)} \right|
+  < C \, \varepsilon^{\frac{p}{6p + 16d}}.
+\end{equation}
+This controls the degree to which the LOT velocity magnitude faithfully represents the Wasserstein displacement at each step. If the reservoir predicts $\widehat{\Delta}_t \approx \Delta_t$ in $L^2(\sigma)$, then the predicted Wasserstein displacement $\|\widehat{\Delta}_t\|_{L^2(\sigma)}$ approximates the true displacement $W_2(\mu_t, \mu_{t+1})$ up to both the prediction error and the compatibility error.
+
+Together with the velocity correspondence of Proposition~\ref{thm:lot-faithful} (which identifies $\dot{u}_t = v_t \circ T_\sigma^{\mu_t}$ under exact compatibility) and the first-order expansion of
+Section~\ref{sec:discrete-time-lot} (which gives
+$\Delta_t \approx h \cdot v_t \circ T_\sigma^{\mu_t}$ for small step
+size~$h$), this shows that the discrete LOT velocity $\Delta_t$
+approximates the pullback of the Eulerian velocity field to
+$\sigma$-coordinates, with two sources of error: the compatibility
+quality~$\varepsilon$ (controlled here) and the time discretization
+(controlled in Section~\ref{sec:discrete-time-lot}).
+\end{remark}
+
+
+\subsubsection{Finite-sample transport map estimation}
+
+The second source of error arises from estimating the optimal transport map $T_\sigma^{\mu_t}$ using only $N$ samples from $\mu_t$ using only $N$ samples $\mu_t$. This section will address the question of "how well can we estimate the LOT map itself from finite data?"
+
+Let
+\[
+\hat{\mu}_{t,N} := \frac1N\sum_{j=1}^N \delta_{y_j^{(t)}},
+\qquad y_j^{(t)} \stackrel{\mathrm{i.i.d.}}{\sim} \mu_t,
+\]
+denote the empirical target measure. In computation, we also discretize the reference measure $\sigma$ by drawing
+\[
+\hat{\sigma}_m := \frac1m\sum_{i=1}^m \delta_{x_i},
+\qquad x_i \stackrel{\mathrm{i.i.d.}}{\sim} \sigma,
+\]
+and solve a discrete quadratic optimal transport problem between $\hat{\sigma}_m$ and $\hat{\mu}_{t,N}$.
+
+Specifically, let $\gamma\in\mathbb R_+^{m\times N}$ be an optimal transport plan for the quadratic cost $c(x,y)=\|x-y\|^2$ between $\hat{\sigma}_m$ and $\hat{\mu}_{t,N}$, i.e.\ $\gamma$ minimizes
+$\sum_{i=1}^m\sum_{j=1}^N \|x_i-y_j^{(t)}\|^2\,\gamma_{ij}$ subject to the marginal constraints
+\[
+\sum_{j=1}^N \gamma_{ij}=\frac1m
+\quad\text{for all }i,
+\qquad
+\sum_{i=1}^m \gamma_{ij}=\frac1N
+\quad\text{for all }j.
+\]
+The associated barycentric projection estimator is defined on the support of $\hat{\sigma}_m$ by
+\begin{equation}\label{eq:bary-proj-emp}
+  \hat{T}_{\hat{\sigma}_m}^{\hat{\mu}_{t,N}}(x_i)
+  := \frac{\sum_{j=1}^{N} y_j^{(t)} \, \gamma_{ij}}
+          {\sum_{j=1}^{N} \gamma_{ij}}
+  = m\sum_{j=1}^N y_j^{(t)}\gamma_{ij},
+  \qquad i=1,\dots,m.
+\end{equation}
+We use $\hat{T}_{\hat{\sigma}_m}^{\hat{\mu}_{t,N}}$ as a plug-in approximation to the population transport map $T_\sigma^{\mu_t}$; the result below quantifies the statistical error contributed by the finite number of target samples $N$. 
+
+The following rate provides the best known convergence guarantee for this plug-in estimator. They key takeaway is that for low-dimensional problems ($d=2,3$), the estimator achieves a near-parametric $N^{-1/2}$ rate, meaning that moderate sample sizes suffice for accurate transport map estimation. \\ 
+
+\begin{proposition}[Plug-in estimator rate; {\cite[Theorem~2.2]{deb2021rates}}]
+\label{prop:plug-in-rate}
+Assume that $T_\sigma^{\mu_t}$ is $L$-Lipschitz and $\mu_t$ is compactly supported. Assume also that $\sigma$ has an exponential moment:
+$\mathbb{E}_\sigma[\exp(c\|x\|^\alpha)] < \infty$ for some $c > 0$, $\alpha > 0$.
+Let $\hat{\mu}_{t,N}$ be formed from $N$ i.i.d.\ samples of $\mu_t$, and let
+$\hat{T}_\sigma^{\hat{\mu}_{t,N}}$ denote the barycentric projection estimator
+defined (as in \eqref{eq:bary-proj-emp}) from an optimal transport plan between
+$\sigma$ and $\hat{\mu}_{t,N}$.\footnote{In our numerical implementation we
+replace $\sigma$ by its empirical discretization $\hat{\sigma}_m$ and compute
+$\hat{T}_{\hat{\sigma}_m}^{\hat{\mu}_{t,N}}$ via linear programming. This adds
+an additional (purely numerical) discretization/quadrature error in approximating
+$\|\cdot\|_{L^2(\sigma)}$ by averages over $\{x_i\}_{i=1}^m$, which we separate
+from the $N$-sample statistical rate stated here.}
+Then
+\begin{equation}\label{eq:plugin-rate}
+  \|T_\sigma^{\mu_t}
+  - \hat{T}_\sigma^{\hat{\mu}_{t,N}}\|_{L^2(\sigma)}^2
+  = O_p\!\left(r_d^{(N)} \cdot \log(1+N)^{t_{d,\alpha}}\right),
+\end{equation}
+where $d$ is the ambient dimension and
+\[
+  r_d^{(N)} =
+  \begin{cases}
+    2N^{-1/2}            & d = 2,3, \\
+    2N^{-1/2}\log(1+N)   & d = 4, \\
+    2N^{-2/d}            & d \geq 5,
+  \end{cases}
+  \qquad
+  t_{d,\alpha} =
+  \begin{cases}
+    (4\alpha)^{-1}\bigl(4 + ((2\alpha + 2d\alpha - d) \vee 0)\bigr)
+                                                        & d < 4, \\
+    (\alpha^{-1} \vee 7/2)-1                        & d = 4, \\
+    2(1 + d^{-1})                                       & d > 4.
+  \end{cases}
+\]
+In particular, for $d = 2$ the rate is $O_p(N^{-1/2}\cdot \mathrm{polylog}(N))$. Here $O_p(\cdot)$ is with respect to the randomness in $\hat{\mu}_{t,N}$.
+\end{proposition}
+\noindent\emph{Proof deferred to Appendix~\ref{app:proof-plugin-rate}.}
+
+\begin{remark}\label{rmk:lipschitz}
+The Lipschitz assumption holds under classical sufficient conditions (e.g. Caffarelli-type regularity when $\sigma$, $\mu_t$ have smooth densities bounded above/below on convex supports). While we do not verify these conditions in full generality, the estimated maps on our benchmarks are empirically well-conditioned (no large local oscillations on the support of $\sigma$), supporting the use of this assumption as a modeling hypothesis for the finite-sample error term. \\
+\end{remark}
+
+\begin{remark}\label{rmk:d2-rate}
+Since our benchmark systems evolve in $\mathbb R^2$, the plug-in estimator achieves a parametric $N^{-1/2}$ rate up to logarithmic factors. This means that doubling the number of target samples reduces the transport map estimation error by a factor of roughly $\sqrt{2}$. This is favorable scaling that makes the method practical even for moderately sized particle systems. In higher
+dimensions the rate deteriorates to $N^{-2/d}$ for $d\ge 5$, reflecting the curse of dimensionality inherent in optimal transport estimation. \\
+\end{remark}
+
+\begin{remark}[Entropic estimator alternative]\label{rmk:entropic}
+As a computationally faster alternative, one may compute an entropically regularized optimal transport plan via Sinkhorn iterations and take its barycentric projection. Sinkhorn-based methods replace the linear program with iterated matrix scaling operations, reducing per-iteration cost significantly. With a regularization parameter $\beta \asymp N^{-1/(n_0+\tilde{\alpha}+1)}$ (here $\beta$ denotes the entropic regularization strength, not the compatibility parameter from Section~\ref{sec:ref-compat}), \cite[Theorem~3]{pooladian2021} yields
+\[
+  \mathbb{E}\bigl\|T_\sigma^{\mu_t}
+  - \hat{T}_\sigma^{\hat{\mu}_{t,N}}(\cdot\,;\gamma_\beta)
+  \bigr\|_{L^2(\sigma)}^2
+  \leq \bigl(1 + I_0(\sigma, \mu_t)\bigr)
+       \, N^{-\frac{\tilde{\alpha}+1}{2n_0 + \tilde{\alpha} + 1}} \log N,
+\]
+where $I_0(\sigma, \mu_t)$ is the integrated Fisher information along the $W_2$-geodesic between $\sigma$ and $\mu_t$,
+$n_0 = 2\lceil d/2 \rceil$, and $\tilde{\alpha} = \alpha \wedge 3$, under the additional regularity conditions required to invoke Caffarelli-type estimates. For $d=2$ this rate is comparable (up to logarithms) to the LP-based plug-in estimator, while the computational complexity is typically $O(N^2\log N)$ for Sinkhorn versus $O(N^3\log N)$ for generic linear programming.
+\end{remark}
+
+
+
+\subsubsection{Reference discretization and concentration}
+
+The third and final source of error arises from evaluating the inner products and norms using a finite sample from $\sigma$ rather than integrating against the entire continuous reference measure. 
+
+Define the empirical LOT distance
+\begin{equation}\label{eq:empirical-lot}
+  \widehat{W}_{2,\sigma}^{\mathrm{LOT}}(\hat{\mu}_s, \hat{\mu}_t;\gamma)
+  := \left(\frac{1}{m}\sum_{i=1}^{m}
+     \bigl\|\hat{T}_\sigma^{\hat{\mu}_s}(x_i;\gamma)
+     - \hat{T}_\sigma^{\hat{\mu}_t}(x_i;\gamma)\bigr\|^2\right)^{1/2},
+\end{equation}
+which is the sample-average approximation of the corresponding $L^2(\sigma)$ norm
+\[
+  W_{2,\sigma}^{\mathrm{LOT}}(\hat{\mu}_s,\hat{\mu}_t;\gamma)
+  := \left(\int
+     \bigl\|\hat{T}_\sigma^{\hat{\mu}_s}(x;\gamma)
+     - \hat{T}_\sigma^{\hat{\mu}_t}(x;\gamma)\bigr\|^2\,d\sigma(x)\right)^{1/2}.
+\]
+Here $\gamma$ indicates the method used to compute transport plans (e.g.\ LP or Sinkhorn), which affects the estimator $\hat T$. A direct application of McDiarmid's concentration inequality shows that this discretization error scales like $O(m^{-1/2})$ with high probability, independently of the ambient dimension. \\
+
+\begin{proposition}[Reference sampling concentration;
+  cf.~{\cite[Theorem~B.3]{cloninger2023lotwassmap}}]\label{prop:mcdiarmid}
+Assume $\mathrm{supp}(\hat{\mu}_u)\subset B(0,R)$ for $u\in\{s,t\}$ and let $\delta\in(0,1)$. Then with probability at least $1-\delta$ over the draw of $\{x_i\}_{i=1}^m \sim \sigma$,
+\begin{equation}\label{eq:mcdiarmid-bound}
+  \left|W_{2,\sigma}^{\mathrm{LOT}}(\hat{\mu}_s, \hat{\mu}_t;\gamma)
+  - \widehat{W}_{2,\sigma}^{\mathrm{LOT}}(\hat{\mu}_s, \hat{\mu}_t;\gamma)
+  \right|
+  \leq R\sqrt{\frac{2\log(2/\delta)}{m}}.
+\end{equation}
+\end{proposition}
+\noindent\emph{Proof deferred to Appendix~\ref{app:proof-mcdiarmid}.}
+
+The $m^{-1/2}$ rate in~\eqref{eq:mcdiarmid-bound} indicates the reference discretization error can be made arbitrarily small
+by increasing the number of reference samples, independently of the
+ambient dimension.  In practice, this error is typically much smaller
+than the transport map estimation error (which depends on $N$) and
+the compatibility error (which depends on $\varepsilon$).
+
+
+\subsubsection{Combined approximation bound}
+
+We now chain the three error sources together, obtaining a single bound on the total LOT approximation error. 
+
+\begin{theorem}[Finite-sample LOT approximation]\label{thm:finite-sample-lot}
+Let Assumption~\ref{ass:regularity} hold and assume $\mathrm{supp}(\mu_t)\subset
+B(0,R)$ for all $t\in[0,T]$. Suppose in addition that $T_\sigma^{\mu_t}$ is
+$L$-Lipschitz for all $t$. Given $N$ i.i.d.\ samples from each $\mu_t$ and
+$m$ i.i.d.\ samples from $\sigma$, let $\widehat{W}_{2,\sigma}^{\mathrm{LOT}}$ be computed by barycentric projection from transport plans obtained by linear programming. Then, for any $\delta\in(0,1)$,
+\begin{equation}\label{eq:combined-bound}
+  \left|W_2(\mu_s,\mu_t)^2
+  - \widehat{W}_{2,\sigma}^{\mathrm{LOT}}(\hat{\mu}_s,\hat{\mu}_t;\gamma)^2\right|
+  \;\le\; 4R\Bigl(
+    C\,\varepsilon^{\frac{p}{6p+16d}}
+    + \|T_\sigma^{\mu_s}-\hat{T}_\sigma^{\hat{\mu}_s}\|_{L^2(\sigma)}
+    + \|T_\sigma^{\mu_t}-\hat{T}_\sigma^{\hat{\mu}_t}\|_{L^2(\sigma)}
+    + R\sqrt{\frac{2\log(2/\delta)}{m}}
+  \Bigr)
+\end{equation}
+with probability at least $1-\delta$ over the draw of the reference samples
+$\{x_i\}_{i=1}^m\sim\sigma$. Moreover,
+\[
+\|T_\sigma^{\mu_u}-\hat{T}_\sigma^{\hat{\mu}_u}\|_{L^2(\sigma)}
+= O_p\!\left(\sqrt{r_d^{(N)}\,\log(1+N)^{t_{d,\alpha}}}\right),
+\qquad u\in\{s,t\},
+\]
+where $C=C_{d,p,\Omega,M_p}$ is as in Proposition~\ref{prop:lot-almost-isometry} and $r_d^{(N)},t_{d,\alpha}$ are as in Proposition~\ref{prop:plug-in-rate}.
+\end{theorem}
+\noindent\emph{Proof deferred to Appendix~\ref{app:proof-finite-sample-lot}.}
+
+
+\subsection{Discrete-time LOT velocities}\label{sec:discrete-time-lot}
+
+The previous subsection analyzed the LOT embedding in the continuous-time, population-level setting. We now make the transition to the discrete-time, finite-sample settings that is directly relevant to the computation.
+
+In applications we observe the trajectory $(\mu_t)_{t=0}^T$ at discrete time steps of size $\delta t>0$. Recall from Section~\ref{sec:lot-prelim} that the LOT coordinates are $u_t:=T_\sigma^{\mu_t}\in H:=L^2(\sigma;\R^d)$ and the
+(discrete) LOT velocity is
+\begin{equation}\label{eq:discrete-lot-velocity}
+  \Delta_t \;:=\; u_{t+1}-u_t
+  \;=\; T_\sigma^{\mu_{t+1}}-T_\sigma^{\mu_t}\in H.
+\end{equation}
+We now (i) relate $\Delta_t/\delta t$ to the continuous-time velocity field and (ii) quantify the error when $\Delta_t$ is estimated from finite samples.
+
+
+\subsubsection{First-order time discretization}
+
+The connection between the discrete LOT velocity and continuous velocity field is established by combining the tangent-vector characterization of absolutely continuous curves in Wasserstein space with the velocity correspondence of Proposition~\ref{thm:lot-faithful}. 
+
+Let $(\mu_t)_{t\in[0,T]}$ be absolutely continuous in $(\mathcal P_2(\R^d),W_2)$ with Eulerian velocity field $v_t$ solving the continuity equation. By the characterization of tangent vectors to absolutely continuous curves in
+$\mathcal W_2(\R^d)$, the infinitesimal transport map satisfies
+\cite[Theorem~8.3.1 and Proposition~8.4.6]{ambrosio2008gradient}
+\begin{equation}\label{eq:discrete-euler-w2}
+  T_{\mu_t}^{\mu_{t+h}}
+  \;=\; \mathrm{id} + h\,v_t + o(h)
+  \quad\text{in }L^2(\mu_t)\qquad(h\to 0).
+\end{equation}
+
+To express this in LOT coordinates, we use Proposition~\ref{thm:lot-faithful}. Under exact Lagrangian compatibility (Assumption~\ref{ass:lag-compat}), $\dot u_t$ exists for a.e.\ $t$ and satisfies $\dot u_t = v_t\circ u_t$ in $L^2(\sigma)$. Therefore, for a time step $\delta t$,
+\begin{equation}\label{eq:discrete-euler-lot}
+  \Delta_t
+  \;=\; u_{t+\delta t}-u_t
+  \;=\; \dot u_t\,\delta t + o(\delta t)
+  \quad\text{in }L^2(\sigma),
+\end{equation}
+and hence
+\begin{equation}\label{eq:discrete-correspondence}
+  \frac{\Delta_t(x)}{\delta t}
+  \;=\; v_t\bigl(u_t(x)\bigr) + o(1)
+  \quad\text{for }\sigma\text{-a.e.\ }x.
+\end{equation}
+Equation~\eqref{eq:discrete-correspondence} is the discrete-time analogue of the velocity mapping. That is, the LOT velocity $\Delta_t$, normalized by the step size, converges to the pulled-back Eulerian velocity as the step size tends to zero.  For the finite step sizes used in practice, the $o(1)$ remainder is a time-discretizations error that depends on the regularity of the velocity field $v_t$ and the LOT map $u_t$. This first-order statement should be read as the discrete-time consequence of Proposition~\ref{thm:lot-faithful} together with the tangent-vector characterization \eqref{eq:discrete-euler-w2}.
+
+The correspondence $\dot u_t = v_t \circ u_t$ (and thus
+\eqref{eq:discrete-euler-lot}--\eqref{eq:discrete-correspondence})
+was derived under exact Lagrangian compatibility
+(Assumption~\ref{ass:lag-compat}). Under $\varepsilon$-Lagrangian compatibility (Definition~\ref{def:eps-lagrangian}), this identity is no longer exactly true, so the discrete velocity $\Delta_t$ picks up an additional error beyond the time-discretization remainder $o(\delta t)$. This additional error is the LOT-vs-$W_2$ gap, which is already bounded by Proposition~\ref{prop:lot-almost-isometry} as $C\,\varepsilon^{p/(6p+16d)}$ and enters the overall error budget through the $\varepsilon$-term, not the $\delta t$-term.
+
+
+
+\subsubsection{Finite-sample LOT velocity estimation}
+
+Having established the population-level relationship between $\Delta_t$
+and $v_t$, we now quantify the additional error introduced by estimating $\Delta_t$ from finite samples. This is a straightforward consequence of the transport map estimation rate (Proposition~\ref{prop:plug-in-rate}), applied twice (once at each endpoint of the velocity difference). 
+
+In computation, we replace $\mu_t$ by the empirical measure
+$\hat\mu_{t,N}=\frac1N\sum_{j=1}^N\delta_{y_j^{(t)}}$ and approximate
+$u_t=T_\sigma^{\mu_t}$ by a barycentric projection estimate
+$\hat u_t := \hat T_\sigma^{\hat\mu_{t,N}}$ (Section~\ref{sec:finite-sample}). We also discretize $\sigma$ by $m$ i.i.d.\ reference samples
+$\{x_i\}_{i=1}^m\sim\sigma$ to evaluate $L^2(\sigma)$ norms by sample averages.
+
+Define the empirical LOT velocity
+\begin{equation}\label{eq:empirical-delta}
+  \hat\Delta_t \;:=\; \hat u_{t+1}-\hat u_t
+  \;=\; \hat T_\sigma^{\hat\mu_{t+1,N}}-\hat T_\sigma^{\hat\mu_{t,N}}.
+\end{equation}
+Then, by the triangle inequality in $L^2(\sigma)$,
+\begin{equation}\label{eq:delta-sample-error}
+  \|\Delta_t-\hat\Delta_t\|_{L^2(\sigma)}
+  \;\le\;
+  \|u_{t+1}-\hat u_{t+1}\|_{L^2(\sigma)}
+  +\|u_t-\hat u_t\|_{L^2(\sigma)}.
+\end{equation}
+The triangle inequality here reflects the fact that the empirical velocity $\hat{\Delta}_t$ is a difference of two estimated maps, each of which introduces its own estimation error. The errors from the two time steps add (in the worst case) rather than cancel.
+
+
+
+Under the assumptions of Proposition~\ref{prop:plug-in-rate},
+\[
+  \|u_t-\hat u_t\|_{L^2(\sigma)}^2
+  \;=\; O_p\!\left(r_d^{(N)}\,\log(1+N)^{t_{d,\alpha}}\right),
+\]
+so taking square roots and combining with \eqref{eq:delta-sample-error} gives
+\begin{equation}\label{eq:delta-sample-rate}
+  \|\Delta_t-\hat\Delta_t\|_{L^2(\sigma)}
+  \;=\;
+  O_p\!\left(\sqrt{r_d^{(N)}\,\log(1+N)^{t_{d,\alpha}}}\right).
+\end{equation}
+In particular, for $d=2$, $\sqrt{r_2^{(N)}}=O(N^{-1/4})$ up to logarithmic factors. That is, the empirical LOT velocity converges to the population LOT velocity at a rate of $N^{-1/4}$, so that increasing the number of target particles improves velocity estimation. However, this scales at a slower rate than the transport map estimation itself (which scales as $N^{-1/4}$ in squared-$L^2$). 
+
+If we evaluate the $L^2(\sigma)$ norm on the reference sample $\{x_i\}_{i=1}^m$, the additional reference discretization error is controlled by Proposition~\ref{prop:mcdiarmid}.
+
+
+\subsubsection{LOT distance as a Wasserstein surrogate}\label{sec:lot-surrogate}
+
+In concluding the finite-sample analysis, the key relationship that underpins the entire pipeline is the fact that the LOT distance, computed from finite samples, approximates the true Wasserstein distance with an error controlled by the compatibility parameter~$\varepsilon$.
+
+We use the LOT distance (Section~\ref{sec:lot-prelim})
+\begin{equation}\label{eq:lot-surrogate-error}
+  W_{2,\sigma}^{\mathrm{LOT}}(\mu_s,\mu_t)
+  \;:=\; \|u_s-u_t\|_{L^2(\sigma)}
+  \;=\; \|T_\sigma^{\mu_s}-T_\sigma^{\mu_t}\|_{L^2(\sigma)}
+\end{equation}
+as a computable surrogate for $W_2(\mu_s,\mu_t)$. Under the regularity and
+$\varepsilon$-compatibility hypotheses of Section~\ref{sec:finite-sample},
+Proposition~\ref{prop:lot-almost-isometry} yields the quantitative bound
+\begin{equation}\label{eq:w2-vs-lot}
+  \bigl|W_2(\mu_s,\mu_t)-W_{2,\sigma}^{\mathrm{LOT}}(\mu_s,\mu_t)\bigr|
+  \;<\; C_{d,p,\Omega,M_p}\,\varepsilon^{\frac{p}{6p+16d}}.
+\end{equation}
+Thus, the only source of error in replacing $W_2$ by the LOT distance is
+the compatibility quality~$\varepsilon$ of the reference~$\sigma$. The LOT error depends solely on the geometric relationship between $\sigma$ and the dynamics, not on sample sizes. \\
+
+\begin{remark}[Error budget for LOT velocities]\label{rmk:error-budget}
+Approximating the pulled-back velocity $\widetilde v_t=v_t\circ u_t$ from
+discrete empirical data via $\hat\Delta_t/\delta t$ involves three independent effects:
+\begin{enumerate}[label=(\roman*)]
+    \item \textbf{Time discretization}: the $o(1)$ term in \eqref{eq:discrete-correspondence}, which depends on the step size $\delta$ and the regularity of $v_t$
+    \item \textbf{Finite-sample estimation}: rate
+\eqref{eq:delta-sample-rate}, which depends on the number of target particles $n$
+    \item \textbf{Compatibility error}: the $\varepsilon$-controlled surrogate error \eqref{eq:w2-vs-lot}, which depends on the choice of reference~$\sigma$
+\end{enumerate}
+
+The velocity-level approximation rates are inherited from the map-level rates in Proposition~\ref{prop:plug-in-rate} together with the difference estimate \eqref{eq:delta-sample-error}.
+These three effects are independent in the sense that each can be controlled separately: the time discretizations by choosing a smaller step size, the finite-sampling error by increasing $N$, and the compatibility error by selecting a better-adapted reference $\sigma$. The combined error budget propagates additively into the reservoir computing analysis of Section~\ref{sec:rc-theory}
+\end{remark}
+
+
+\subsection{LOT velocity vs. position forecasting}\label{sec:lot-vs-raw}
+
+Before proceeding to the reservoir computing framework, we pause to justify a key design decision: why the pipeline forecasts LOT velocities $\Delta_t$ rather than LOT position $u_t$. While both strategies are mathematically valid, the velocity formulation offers advantages in terms of physical grounding, statistical properties and error propagation.
+
+Proposition~\ref{thm:lot-faithful} motivates forecasting LOT velocities rather than LOT positions. We compare the two strategies below.
+
+\paragraph{LOT velocity forecasting.}
+To avoid ambiguity, we reserve $\Delta_t$ for population LOT velocities, $\hat{\Delta}_t$ for empirical LOT velocities computed from data, and $\widehat{\Delta}_t$ for ESN forecasts.
+Let $u_t := T_\sigma^{\mu_t}\in H$ denote the LOT coordinates. Given past
+observations $(u_0,\ldots,u_t)$:
+\begin{enumerate}
+\item Compute the discrete velocities $\Delta_s := u_{s+1}-u_s$ for $s<t$.
+\item Train the reservoir to predict the next velocity $\Delta_t$ from the
+past velocity history (or a window thereof).
+\item Roll out predicted velocities $\widehat{\Delta}_t,\widehat{\Delta}_{t+1},\ldots$.
+\item Recover predicted LOT coordinates by summation:
+\[
+\widehat{u}_{t+k} \;=\; u_t + \sum_{j=0}^{k-1}\widehat{\Delta}_{t+j}.
+\]
+\item Reconstruct forecast measures by pushforward:
+\[
+\widehat{\mu}_{t+k} \;:=\; (\widehat{u}_{t+k})_\sharp \sigma.
+\]
+This defines a valid forecast measure for any $\widehat{u}_{t+k}\in L^2(\sigma;\R^d)$.
+(In general $\widehat{u}_{t+k}$ need not be an optimal transport map, but in our
+benchmarks it remains close to the OT class empirically.)
+\end{enumerate}
+
+\paragraph{LOT position forecasting.}
+A more direct alternative is to learn the LOT positions themselves:
+\begin{enumerate}
+\item Train the reservoir to predict the next position $u_{t+1}$ from the
+past position sequence $(u_0,\ldots,u_t)$ (or a fixed window).
+\item Obtain forecasts $\widehat{u}_{t+1},\widehat{u}_{t+2},\ldots$ by running the
+reservoir in an autoregressive loop (feeding predicted positions back as inputs).
+\item Reconstruct measures by pushforward: $\widehat{\mu}_{t+k} := (\widehat{u}_{t+k})_\sharp \sigma$. \\
+\end{enumerate}
+
+\begin{remark}[Why velocities are more amenable to learning]\label{rem:why-velocity}
+The LOT velocity formulation has several advantages:
+\begin{itemize}
+\item \textbf{Physical grounding.} Under exact Lagrangian compatibility, Proposition~\ref{thm:lot-faithful} identifies the (continuous-time) LOT velocity $\dot u_t$ with the pulled-back Eulerian velocity field $v_t\circ u_t$. Under
+$\varepsilon$-Lagrangian compatibility this interpretation holds up to the compatibility error controlled in Section~\ref{sec:finite-sample}. 
+
+\item \textbf{Stationarity.} In many systems (including our benchmarks), velocity signals are stationary or slowly varying, while positions $u_t$ drift over a large domain. Reservoirs, like most time-series models, perform best when the input signal has bounded range and stable statistics. Velocity inputs naturally satisfy both conditions. 
+
+\item \textbf{Error propagation.} In position forecasting, an error in $\widehat{u}_t$ is immediately fed back as the state at the next step, which can compound rapidly through autoregressive rollout. In velocity forecasting, the predictor operates on increments, and reconstruction by summation tends to damp high-frequency, mean-zero errors over moderate horizons. Intuitively, if velocity prediction errors are approximately unbiased, they partially cancel during summation, leading to slower error growth.
+\end{itemize}
+These considerations are borne out empirically in Section~\ref{sec:results}.
+\end{remark}
+
+
+\subsection{Reconstruction and stability}\label{sec:reconstruction}
+
+To close the loop from LOT-space prediction back to Wasserstein-space forecasting we look at a stability bound. If the predicted LOT coordinates $\widehat{u}$ are close to the true LOT coordinates $u$ in the $L^2(\sigma)$ norm, then the reconstructed forecast measure $\widehat{\mu} = \widehat{u}_\sharp \sigma$ should be close to the true measure $\mu = u_\sharp \sigma$ in the Wasserstein distance. The following lemma provides this guarantee. \\
+
+\begin{lemma}[Reconstruction stability]\label{lem:reconstruction}
+Let $u,\widehat{u} \in L^2(\sigma;\R^d)$ and define $\mu := u_\sharp \sigma$ and
+$\widehat{\mu} := \widehat{u}_\sharp \sigma$. Then
+\begin{equation}\label{eq:reconstruction-bound}
+W_2(\widehat{\mu},\mu) \;\le\; \|\widehat{u} - u\|_{L^2(\sigma)}.
+\end{equation}
+\end{lemma}
+\noindent\emph{Proof deferred to Appendix~\ref{app:proof-reconstruction}.}
+
+The bound~\eqref{eq:reconstruction-bound} says that the $L^2(\sigma)$ error in LOT coordinates is an upper bound for the Wasserstein error of the reconstructed measures. This is the best one can hope for without additional assumptions. The coupling $(\widehat{u}, u)_\sharp \sigma$ is a natural "transport plan" between the predicted and true measures, and its cost is precisely the $L^2(\sigma)$ prediction error.
+
+Lemma~\ref{lem:reconstruction} will be used in Section~\ref{sec:rc-theory} to convert Hilbert-space error bounds for the reservoir predictor into Wasserstein error bounds for the induced forecast of measure-valued dynamics. 
+
+\section{Reservoir Computing on LOT Dynamics}
+\label{sec:rc-theory}
+
+Having established that LOT velocities faithfully represent measure
+dynamics (Section~\ref{sec:lot-faithful}), with quantitative error bounds
+for finite samples (Section~\ref{sec:finite-sample}) and discrete time
+(Section~\ref{sec:discrete-time-lot}), we now show that reservoir computing
+can learn to predict these velocities from data. This section shows that echo state networks are well-suited to this task. We first describe the complete LOT--RC pipeline (\S\ref{sec:pipeline}), then instantiate the reservoir dynamics on LOT
+velocity inputs (\S\ref{sec:rc-dynamics}), establish approximation
+guarantees via ESN universality (\S\ref{sec:rc-approx}), assemble the
+end-to-end error decomposition that makes the trade-offs between
+compatibility, sampling, and learning explicit (\S\ref{sec:error-decomp}),
+and finally describe the concrete training procedure (\S\ref{sec:training})
+
+
+\subsection{The LOT--RC pipeline}\label{sec:pipeline}
+
+The five stages below convert a time series of probability measures into a forecast. Each stage corresponds to one source of error in the decomposition of Theorem~\ref{thm:error-decomp}.
+Our forecasting method proceeds in five stages:
+\begin{equation}\label{eq:pipeline}
+  \mu_t
+  \;\xrightarrow{\text{sample}}\;
+  \{y_j^{(t)}\}_{j=1}^N
+  \;\xrightarrow{\text{OT}}\;
+  \hat{T}_\sigma^{\hat{\mu}_t}
+  \;\xrightarrow{\text{LOT vel.}}\;
+  \hat{\Delta}_t \in \R^{dm}
+  \;\xrightarrow{\text{ESN}}\;
+  \widehat{\Delta}_{t+1}
+  \;\xrightarrow{\text{integrate}}\;
+  \widehat{u}_{t+H}.
+\end{equation}
+Here $m$ denotes the number of reference points used to discretize
+$\sigma$ (as in Section~\ref{sec:prelim-discrete}), and each LOT velocity
+$\hat{\Delta}_t$ and LOT position $\hat{u}_t$ is represented as a vector
+in $\R^{dm}$ (stacking coordinates across all $m$ reference points; for
+$d=2$ this gives $\R^{2m}$). The predicted LOT position
+$\widehat{u}_{t+H}$ is converted back to a measure via pushforward:
+$\widehat{\mu}_{t+H} = (\widehat{u}_{t+H})_\sharp \hat{\sigma}_m$.
+
+\paragraph{Notation for velocities.}
+We use three types of notation to distinguish velocities at different levels of approximation:
+\begin{itemize}
+  \item $\Delta_t = u_{t+1} - u_t \in L^2(\sigma;\R^d)$: the population-level LOT velocity, computed from the true measures and the continuous reference $\sigma$.
+  \item $\hat{\Delta}_t = \hat{u}_{t+1} - \hat{u}_t \in \R^{dm}$: the empirical LOT velocity, computed from finite samples via barycentric projection (Section~\ref{sec:prelim-discrete}).
+  \item $\widehat{\Delta}_{t+1} = W^{\mathrm{out}} r_t \in \R^{dm}$: the ESN-predicted velocity, the output of the trained readout.
+\end{itemize}
+
+The pipeline supports three forecasting objectives:
+\begin{itemize}
+  \item \textbf{Forecasting in LOT space:} predicting the future LOT
+        coordinates by integrating predicted velocities,
+        $\widehat{u}_{t+H}
+        = \hat{u}_t + \sum_{j=0}^{H-1}\widehat{\Delta}_{t+j+1}$.
+  \item \textbf{Forecasting observables:} predicting low-dimensional
+        physical quantities $F(\mu_{t+H})$ (center of mass, variance,
+        moments) via a linear readout from the reservoir state.
+  \item \textbf{Reconstruction:} converting the predicted LOT coordinates
+        back to a measure
+        $\widehat{\mu}_{t+H} = (\widehat{u}_{t+H})_\sharp \hat{\sigma}_m$,
+        with stability guaranteed by Lemma~\ref{lem:reconstruction}.
+\end{itemize}
+
+\paragraph{Choice of reference measure.}
+The reference measure $\sigma$ is fixed throughout the pipeline and controls the compatibility quality $\varepsilon$ of Definition~\ref{def:eps-lagrangian}. By Remark~\ref{rem:eps-interpretation}, the choice of $\sigma$ directly affects the LOT approximation quality through three regimes:
+\begin{itemize}
+  \item $\sigma = \mu_0$: exact compatibility ($\varepsilon = 0$) often
+        holds, but $\sigma$ may poorly represent measures $\mu_t$ that have
+        drifted far from $\mu_0$.
+  \item $\sigma = \mathrm{bar}(\mu_{t_1}, \ldots, \mu_{t_K})$: the
+        Wasserstein barycenter of the training trajectory balances
+        compatibility across all timesteps, typically achieving small
+        $\varepsilon$, but requires access to training data.
+  \item $\sigma$ a generic prior (e.g., Gaussian): incurs larger
+        $\varepsilon$ but requires no data access and may generalize better.
+\end{itemize}
+The $\varepsilon$-Lagrangian compatibility framework of Section~\ref{sec:ref-compat} makes this tradeoff clear. Proposition~\ref{prop:lot-almost-isometry} shows that the LOT distance approximates $W_2$ with error $C\varepsilon^{p/(6p+16d)}$, so different
+reference choices yield quantitatively different approximation qualities. We compare these choices empirically in Section~\ref{sec:benchmarks}.
+
+
+\subsection{Reservoir dynamics on LOT velocities}\label{sec:rc-dynamics}
+
+The LOT embedding converts the measure dynamics into a Hilbert-space time series. We now need a learning architecture suited to such a sequential data. We instantiate the ESN framework of Section~\ref{sec:prelim-esn} with LOT velocity inputs. At the population level, the reservoir processes the sequence $\Delta_t = u_{t+1} - u_t \in H = L^2(\sigma; \R^d)$. In the empirical setting we feed $\hat{\Delta}_t \in \R^{dm}$.
+
+\paragraph{Input operator.}
+Since $H$ is a separable Hilbert space, a bounded linear input operator $B: H \to \R^n$ can be represented via the Riesz theorem using test functions $\psi_1, \ldots, \psi_n \in H$ (cf.~\eqref{eq:riesz-prelim}). This is the theoretical realization of the abstract input operator from Definition~\ref{def:esn-prelim}. In the empirical setting, we discretize $\sigma$ by $m$ reference points $\{x_\ell\}_{\ell=1}^m$ with uniform weights $1/m$, and identify the Hilbert space $H = L^2(\sigma;\R^d)$ with $\R^{dm}$ via the map
+$u \mapsto (u(x_1), \ldots, u(x_m))$, equipped with the weighted Euclidean norm $\|z\|^2 = \frac{1}{m}\sum_{\ell=1}^m \|z_\ell\|^2$ that approximates the $L^2(\sigma)$ norm (cf.~\eqref{eq:empirical-L2}). Under this identification, $B$ becomes a standard matrix
+$W^{\mathrm{in}} \in \R^{n \times dm}$, and the reservoir update takes the finite-dimensional form
+\begin{equation}\label{eq:rc-update-discrete}
+  r_{t+1} = \varphi(A r_t + W^{\mathrm{in}} \hat{\Delta}_t + b),
+  \qquad
+  \widehat{\Delta}_{t+1} = W^{\mathrm{out}} r_t,
+\end{equation}
+where $\varphi$ is the component-wise activation (e.g., $\tanh$), $A \in
+\R^{n \times n}$ is the reservoir matrix satisfying the echo state property
+$L_\varphi \|A\|_2 < 1$ (Proposition~\ref{prop:esp}), and
+$W^{\mathrm{out}} \in \R^{dm \times n}$ is the linear readout trained to predict the next empirical LOT velocity from the current reservoir state.
+
+\paragraph{Why LOT velocities, not positions.}
+We feed the reservoir LOT velocities $\hat{\Delta}_t$ rather than positions $\hat{u}_t$ for three reasons. First, velocities are physically grounded. By Proposition~\ref{thm:lot-faithful}, $\Delta_t$ approximates the pulled-back Eulerian velocity $v_t \circ u_t$.  Second, velocities tend to be stationary or slowly varying (bounded in $[-2R_0, 2R_0]^{dm}$ regardless of how far the trajectory has drifted from the reference), yielding more stable reservoir statistics.  Third, and most importantly,
+velocity prediction leads to linear rather than exponential error accumulation during autonomous forecasting (Proposition~\ref{prop:multistep}). The experiments of
+Section~\ref{sec:benchmarks} confirm this advantage empirically.
+
+
+\subsection{Universality and approximation guarantees}\label{sec:rc-approx}
+
+We now show that the universality of ESNs (Theorem~\ref{thm:universality}) extends to the specific setting of LOT velocity prediction. An ESN processing LOT velocities can uniformly approximate the one-step velocity prediction operator, and multi-step bounds follow by integration.
+
+\subsubsection{The LOT dynamics operator}
+\label{sec:lot-dynamics-op}
+
+The measure dynamics $\Phi: \mu_t \mapsto \mu_{t+1}$ lifts to the LOT
+coordinates as
+\[
+  \mathcal{U}: u_t \mapsto u_{t+1},
+\]
+where $u_t = T_\sigma^{\mu_t} \in H$. The corresponding velocity operator
+maps the history of LOT velocities to the next velocity:
+\begin{equation}\label{eq:velocity-operator}
+  \mathcal{V}: (\Delta_0, \ldots, \Delta_{t-1}) \;\mapsto\; \Delta_t
+  \;=\; u_{t+1} - u_t.
+\end{equation}
+By the velocity correspondence (Proposition~\ref{thm:lot-faithful}), under exact Lagrangian compatibility the LOT velocity satisfies
+$\dot u_t = v_t \circ u_t$, and for small
+$\delta t > 0$, the discrete-time expansion of
+Section~\ref{sec:discrete-time-lot} gives
+\begin{equation}\label{eq:lot-euler}
+  \Delta_t = u_{t+\delta t} - u_t = \widetilde{v}_t \, \delta t + o(\delta t)
+  \quad \text{in } L^2(\sigma),
+\end{equation}
+where $\widetilde{v}_t = v_t \circ u_t$ is the pullback velocity. Thus $\mathcal{V}$ maps the velocity history to a the pull-back Eulerian velocity at the next time step. The universality theorem guarantees that an ESN can approximate $\mathcal{V}$ on the compact set of trajectories arising from bounded dynamics. 
+
+\begin{theorem}[ESN approximation of the LOT velocity operator]\label{thm:velocity-approx}
+Let $(\mu_t)_{t=0}^T$ satisfy the regularity conditions of
+Assumption~\ref{ass:regularity} and the $\varepsilon$-Lagrangian
+compatibility of Definition~\ref{def:eps-lagrangian}. Let $u_t =
+T_\sigma^{\mu_t}$ and $\Delta_t = u_{t+1} - u_t \in \R^{dm}$ (in the
+empirical setting with $m$ reference points, as in
+Section~\ref{sec:prelim-discrete}). Suppose the reservoir
+satisfies the echo state property
+(Proposition~\ref{prop:esp}), and that the velocity operator $\mathcal{V}$
+of~\eqref{eq:velocity-operator} has fading memory on the compact set of trajectory segments arising from bounded LOT velocities.
+
+Then for any $\eta > 0$, there exist a reservoir dimension $n$, matrices
+$A \in \R^{n \times n}$ and $W^{\mathrm{in}} \in \R^{n \times dm}$
+satisfying ESP, a bias $b \in \R^n$, and a linear readout
+$W^{\mathrm{out}} \in \R^{dm \times n}$ such that
+\begin{equation}\label{eq:velocity-approx-bound}
+  \sup_{0 \leq t \leq T-1}
+  \|W^{\mathrm{out}} r_t - \Delta_{t+1}\|_{L^2(\sigma)} < \eta,
+\end{equation}
+where $r_t$ is the reservoir state after processing the input history
+$(\Delta_0, \ldots, \Delta_t)$
+via~\eqref{eq:rc-update-discrete}.
+\end{theorem}
+\noindent\emph{Proof deferred to Appendix~\ref{app:proof-velocity-approx}.}
+
+\begin{remark}[Fading-memory condition]\label{rem:fading-memory}
+The fading-memory hypothesis on $\mathcal{V}$ is the key condition enabling
+the universality theorem. We state below standard sufficient scenarios under which such a fading-memory hypothesis is reasonable as a modeling assumption:
+\begin{enumerate}[label=(\roman*)]
+  \item When the underlying dynamics
+  $\Phi: \mu_t \mapsto \mu_{t+1}$ are generated by a Lipschitz velocity
+  field $v_t$ on a compact domain, the sensitivity of $\Delta_t$ to
+  perturbations in $\Delta_{t-k}$ decays as the
+  Lagrangian flow map $X_t$ forgets initial conditions. For gradient flows
+  (e.g., $\partial_t \mu_t = \nabla \cdot (\mu_t \nabla V)$), this
+  forgetting is exponential in $k$ when $V$ is strongly convex.
+  \item More generally, if the LOT-coordinate dynamics $u_{t+1} =
+  \mathcal{U}(u_t)$ admit a compact attractor $\mathcal{A} \subset H$ and
+  $\mathcal{U}$ is Lipschitz with Lipschitz constant $L_{\mathcal{U}} < 1$
+  on a neighborhood of $\mathcal{A}$, then the velocity operator
+  $\mathcal{V}$ inherits exponential fading memory with rate
+  $\rho \leq L_{\mathcal{U}}$.
+  \item In the absence of such structural properties, fading memory can be
+  treated as a modeling assumption on the dynamical system being forecast.
+  This is standard in the reservoir computing literature \cite{BoydChua1985,GrigoryevaOrtega2018}.
+\end{enumerate}
+The two benchmark systems studied in Section~\ref{sec:benchmarks} both
+generate bounded, slowly varying velocity sequences on compact domains,
+consistent with this assumption.
+\end{remark}
+
+\begin{remark}[Distinction between $\eta$ and $\varepsilon$]\label{rem:eta-vs-eps}
+We use $\eta$ for the ESN approximation accuracy in
+Theorem~\ref{thm:velocity-approx} to distinguish it from $\varepsilon$,
+which denotes the Lagrangian compatibility quality throughout the paper. These errors are independent and enter through different mechanisms. $\varepsilon$ measures how well the LOT embedding captures the dynamics (Section~\ref{sec:ref-compat}), while $\eta$ measures
+how well the ESN approximates the LOT velocity operator. Both appear in the total error decomposition (Theorem~\ref{thm:error-decomp}).
+\end{remark}
+
+\subsubsection{One-step flow approximation in Wasserstein space}
+\label{sec:flow-approx}
+
+Combining Theorem~\ref{thm:velocity-approx} with the reconstruction
+stability lemma (Lemma~\ref{lem:reconstruction}), we obtain a one-step
+bound in $W_2$ between true and predicted measures. The key idea is to compare two measures that share the same LOT starting point $\hat{u}_t$, so that the difference isolated purely the RC approximation error with no contribution for the LOT embedding.
+
+\begin{corollary}[One-step flow approximation in $W_2$]\label{cor:flow}
+Under the conditions of Theorem~\ref{thm:velocity-approx}, let
+$\widehat{\Delta}_{t+1} := W^{\mathrm{out}} r_t$ denote the predicted
+velocity, define the predicted LOT coordinate by
+$\widehat{u}_{t+1} := \widehat{u}_t + \widehat{\Delta}_{t+1}$, and let
+$u_{t+1}^{\mathrm{LOT}} := \hat{u}_t + \hat{\Delta}_{t+1}$
+denote the oracle (non-forecasted) next LOT coordinate starting from the
+same empirical state $\hat{u}_t$. Define
+$\widehat{\mu}_{t+1} := (\widehat{u}_{t+1})_\sharp \hat{\sigma}_m$ and
+$\mu_{t+1}^{\mathrm{LOT}} := (u_{t+1}^{\mathrm{LOT}})_\sharp \hat{\sigma}_m$.
+Then
+\begin{equation}\label{eq:flow-bound}
+  W_2(\widehat{\mu}_{t+1}, \mu_{t+1}^{\mathrm{LOT}})
+  \;\leq\;
+  \|\widehat{\Delta}_{t+1} - \hat{\Delta}_{t+1}\|_{L^2(\hat{\sigma}_m)}
+  \;\leq\; \eta.
+\end{equation}
+\end{corollary}
+\noindent\emph{Proof deferred to Appendix~\ref{app:proof-flow}.}
+
+\subsubsection{Connection to ESN embedding theory}
+\label{sec:esn-embedding}
+
+The previous results are quantitative, providing explicit error bounds
+for the driven ESN processing true or predicted velocity inputs.  We now
+complement them with a qualitative guarantee that the ESN can
+replicate the topological structure of the dynamics when running
+autonomously (in closed loop). We connect our setting to
+the ESN embedding results of Hart, Hook, and Dawes~\cite{Hart_2020}, which
+show that for sufficiently large ESNs, the topology of
+finite-dimensional autonomous dynamical systems on compact invariant sets.
+
+After training (Section~\ref{sec:training}), the closed-loop
+iteration~\eqref{eq:autonomous-vel}--\eqref{eq:autonomous-state} defines
+an autonomous dynamical system on the reservoir state space $\R^n$:
+\begin{equation}\label{eq:closed-loop}
+  r_{t+1} = \varphi\bigl(A r_t + W^{\mathrm{in}} W^{\mathrm{out}} r_t + b\bigr)
+  =: G(r_t),
+\end{equation}
+where $G: \R^n \to \R^n$ is the closed-loop reservoir map. It is this
+autonomous system to which the embedding results of~\cite{Hart_2020} apply.
+
+\begin{assumption}[Hart--Hook--Dawes regime]\label{ass:hart-lot}
+Let $\mathcal{M} \subset \mathcal{P}_2(\R^d)$ be a $W_2$-compact,
+$\Phi$-invariant set with continuous dynamics
+$\Phi: \mathcal{M} \to \mathcal{M}$. Assume that:
+\begin{enumerate}[label=(\roman*)]
+  \item The centered LOT map $\Psi(\mu) = T_\sigma^\mu - \mathrm{id} \in H$ is injective on $\mathcal{M}$; this holds because $T_\sigma^\mu$ determines $\mu$ through the pushforward relation $(T_\sigma^\mu)_\sharp\sigma=\mu$.
+  \item After projecting onto a finite-dimensional subspace $V \subset H$
+        with $\dim V = p$, we obtain a compact invariant set $K \subset
+        \R^p$ and a map $F: K \to K$ representing the projected
+        autonomous LOT dynamics (i.e., the projected version of
+        $\mathcal{U}: u_t \mapsto u_{t+1}$), such that $F$ satisfies the
+        hypotheses of~\cite[Theorems~2.3.7 and~2.4.13]{Hart_2020} (in
+        particular, $F$ is structurally stable on $K$).
+\end{enumerate}
+\end{assumption}
+
+\begin{corollary}[ESN embedding for projected LOT dynamics]
+\label{cor:esn-approx}
+Suppose Assumption~\ref{ass:regularity},
+Definition~\ref{def:eps-lagrangian}, and Assumption~\ref{ass:hart-lot}
+hold. Then for any reservoir dimension $n$ sufficiently large relative to
+$p$ (e.g., $n > 2p$ per~\cite[Theorems~2.3.7
+and~2.4.13]{Hart_2020}), there is, generically over
+random initialization of $A$ and $W^{\mathrm{in}}$, a linear readout
+$W^{\mathrm{out}}$ such that the autonomous closed-loop map $G$
+of~\eqref{eq:closed-loop} is topologically conjugate to the projected LOT
+dynamics $F$ on a compact attracting set in reservoir state space.
+\end{corollary}
+
+\begin{remark}\label{rem:esn-interpret}
+Corollary~\ref{cor:esn-approx} guarantees that the ESN reproduces not only sample trajectories but the topological structure of the dynamics on $K$, though it does not itself produce error rates. In the discretized setting
+the ambient LOT dimension is $dm$. In practice, the effective attractor
+dimension $p$ is typically much smaller than $dm$, reflecting the
+low-dimensional structure of the underlying measure dynamics. This
+motivates reservoir sizes of the form
+$n = \alpha_{\mathrm{res}} \cdot dm$ with
+$\alpha_{\mathrm{res}} \gtrsim 2$, as explored in the ablation studies of
+Section~\ref{sec:benchmarks}.
+\end{remark}
+
+\begin{remark}[Driven vs.\ autonomous guarantees]\label{rem:driven-vs-auto}
+Theorem~\ref{thm:velocity-approx} and Corollary~\ref{cor:esn-approx}
+provide complementary guarantees for different phases of the pipeline.
+Theorem~\ref{thm:velocity-approx} applies to the driven ESN (during
+teacher-forced training and one-step prediction), guaranteeing uniform
+approximation of the velocity operator via the Grigoryeva--Ortega
+universality theorem~\cite{GrigoryevaOrtega2018}.
+Corollary~\ref{cor:esn-approx} applies to the autonomous
+closed-loop ESN (during multi-step forecasting), guaranteeing topological
+fidelity via the Hart--Hook--Dawes embedding
+theory~\cite{Hart_2020}. Both require the reservoir dimension $n$ to be
+sufficiently large relative to the effective attractor dimension $p$, but
+the mechanisms are different. Universality is achieved through the richness
+of the linear readout, while embedding is achieved through the geometric
+properties of the random reservoir map.
+\end{remark}
+
+
+\subsection{Error decomposition}\label{sec:error-decomp}
+
+The previous results show that the LOT--RC pipeline can, in principle, forecast measure-valued dynamics with arbitrary accuracy. We now assemble the complete error budget, making precise the parameter trade-offs previewed in  Section~\ref{sec:prelim-compat}. The three approximation parameters $(\varepsilon, N, m)$ introduced there are now augmented by a fourth: the ESN approximation accuracy $\eta$. 
+
+
+\subsubsection{One-step error decomposition}
+
+We first introduce notation for the intermediate reconstruction that
+separates the LOT embedding error from the RC approximation error.
+
+\begin{definition}[Oracle LOT reconstruction]\label{def:oracle-lot}
+Given empirical measures $\hat{\mu}_{t,N}$ and reference discretization
+$\hat{\sigma}_m$, define the \emph{oracle LOT reconstruction} as
+\begin{equation}\label{eq:oracle-lot}
+  \hat{\mu}_{t}^{\mathrm{LOT}}
+  := (\hat{u}_t)_\sharp \hat{\sigma}_m,
+  \qquad
+  \hat{u}_t := \hat{T}_\sigma^{\hat{\mu}_{t,N}},
+\end{equation}
+i.e., the measure reconstructed from the (non-forecasted) empirical LOT
+coordinates. This serves as an intermediate reference: the gap between
+$\hat{\mu}_{t}^{\mathrm{LOT}}$ and $\mu_t$ reflects only the LOT embedding
+error (Layers~1--2), while the gap between $\widehat{\mu}_t$ and
+$\hat{\mu}_{t}^{\mathrm{LOT}}$ reflects only the RC approximation error
+(Layer~3).
+\end{definition}
+
+\begin{theorem}[End-to-end LOT--RC error]\label{thm:error-decomp}
+Let $(\mu_t)_{t=0}^T$ satisfy Assumption~\ref{ass:regularity} with
+$\varepsilon$-Lagrangian compatibility
+(Definition~\ref{def:eps-lagrangian}), and suppose $T_\sigma^{\mu_t}$ is
+$L$-Lipschitz for all $t$ with
+$\mathrm{supp}(\mu_t) \subset B(0,R_0)$, where $R_0 > 0$ is the support
+radius. Let $N$ target samples and $m$ reference samples be drawn i.i.d.,
+and let the ESN achieve one-step velocity approximation accuracy $\eta$ as
+in Theorem~\ref{thm:velocity-approx}. Then the one-step forecast error
+satisfies
+\begin{equation}\label{eq:error-decomp}
+\boxed{
+  W_2(\widehat{\mu}_{t+1}, \mu_{t+1})
+  \;\leq\;
+  \underbrace{C_{d,p,\Omega,M_p}\,
+    \varepsilon^{\frac{p}{6p+16d}}}_{\text{Layer 1: compatibility}}
+  \;+\;
+  \underbrace{O_p\!\left(
+    \sqrt{r_d^{(N)} \log(1{+}N)^{t_{d,\alpha}}}
+  \right)
+  \;+\; R_0\sqrt{\frac{2\log(2/\delta)}{m}}}_{\text{Layer 2: finite-sample}}
+  \;+\;
+  \underbrace{\eta}_{\text{Layer 3: RC approx.}}
+}
+\end{equation}
+with probability at least $1 - \delta$ over the reference samples, where
+the rates $r_d^{(N)}$ and $t_{d,\alpha}$ are as in
+Proposition~\ref{prop:plug-in-rate}.
+\end{theorem}
+\noindent\emph{Proof deferred to Appendix~\ref{app:proof-error-decomp}.}
+
+\begin{remark}[Interpretation of the three layers]\label{rmk:three-layers}
+Each layer corresponds to a different design choice and is controlled by a different parameter:
+\begin{enumerate}[label=(\alph*)]
+  \item \textbf{Compatibility} ($\varepsilon$-term): the cost of using a
+        fixed reference $\sigma$ that may not be perfectly
+        Lagrangian-compatible with the dynamics. Controlled by the choice
+        of $\sigma$ (Section~\ref{sec:pipeline}). Vanishes when
+        $\varepsilon = 0$.
+  \item \textbf{Finite-sample estimation} ($N$- and $m$-terms): the cost
+        of observing finitely many particles. For $d = 2$, the dominant
+        rate is $O_p(N^{-1/4} \cdot \mathrm{polylog}(N))$ for the
+        transport map estimation, plus
+        $O(m^{-1/2}\sqrt{\log(1/\delta)})$ for reference discretization.
+        These decay as $N$ and $m$ grow and are independent of the
+        compatibility quality.
+  \item \textbf{RC approximation} ($\eta$-term): the cost of the ESN
+        failing to perfectly learn the LOT velocity operator. Controlled by
+        the reservoir dimension $n$ and the richness of the readout.
+        Theorem~\ref{thm:velocity-approx} guarantees $\eta$ can be made
+        arbitrarily small.
+\end{enumerate}
+In the experimental regime ($d = 2$, $N$ and $m$ on the order of hundreds
+to thousands), the dominant contribution is typically the compatibility
+error $\varepsilon$. This motivates the barycentric reference measures used
+in Section~\ref{sec:benchmarks}.
+\end{remark}
+
+\subsubsection{Multi-step forecasting and error accumulation}
+\label{sec:multistep}
+
+For autonomous forecasting beyond one step, we iterate the ESN in closed
+loop. The following bound shows how the RC approximation error accumulates over multiple steps, while the LOT embedding error remains bounded independently of the forecast horizon.
+
+\begin{proposition}[Multi-step stability]\label{prop:multistep}
+Suppose the ESN achieves one-step LOT velocity error
+\[
+  \eta_1 := \sup_t
+  \|\widehat{\Delta}_{t+1} - \hat{\Delta}_{t+1}\|_{L^2(\hat{\sigma}_m)}
+\]
+on the training trajectory (measured in the empirical $L^2(\hat{\sigma}_m)$
+norm). Then, under teacher-forced evaluation, the $K$-step forecast error
+in empirical LOT coordinates satisfies
+\begin{equation}\label{eq:multistep-bound}
+  \|\widehat{u}_{t+K} - \hat{u}_{t+K}\|_{L^2(\hat{\sigma}_m)}
+  \;\leq\; K \, \eta_1,
+\end{equation}
+and consequently
+\begin{equation}\label{eq:multistep-w2}
+  W_2(\widehat{\mu}_{t+K}, \mu_{t+K})
+  \;\leq\; K\,\eta_1 + K\,e_{\mathrm{LOT}},
+\end{equation}
+where $e_{\mathrm{LOT}}$ is the per-step LOT embedding error (Layer~1 +
+Layer~2 of~\eqref{eq:error-decomp}).
+\end{proposition}
+\noindent\emph{Proof deferred to Appendix~\ref{app:proof-multistep}.}
+
+\begin{remark}[Linear RC error, constant LOT error]\label{rem:linear-growth}
+A key feature of Proposition ~\ref{prop:multistep} is the asymmetric
+behavior of the two error sources over the forecast horizon $K$:
+\begin{itemize}
+  \item The \textbf{RC approximation error} $K\,\eta_1$ grows linearly in
+        $K$, since each predicted velocity contributes an additive error
+        that accumulates through
+        integration~\eqref{eq:position-error-sum}.  Small,
+        rapidly fluctuating velocity errors may partially cancel during
+        summation, so in practice the growth is often sublinear.
+  \item The \textbf{LOT embedding error} $e_{\mathrm{LOT}}$ is evaluated
+        at the single time step $t+K$ and does not accumulate with the
+        forecast horizon.  This is a direct consequence of the velocity
+        formulation: because the oracle LOT coordinates are defined by
+        direct OT computation at each time step (not by integrating
+        approximate velocities), the LOT embedding error at the forecast
+        target is independent of how many steps were predicted to get
+        there.
+\end{itemize}
+In contrast, direct position forecasting feeds the error at step $t$ back as input for step $t+1$, which can cause exponential error growth when the dynamics have Lipschitz constant $L > 1$. Our experiments (Section~\ref{sec:benchmarks}) confirm this improved stability. 
+\end{remark}
+
+\begin{remark}[Autonomous vs.\ teacher-forced accumulation]\label{rem:autonomous}
+The bound~\eqref{eq:multistep-bound} assumes teacher-forced velocity
+errors, where each prediction uses the true reservoir state driven by
+correct inputs. In fully autonomous mode, the predicted velocity
+$\widehat{\Delta}_{t+k}$ is fed back as input to the reservoir, introducing
+a feedback error. If the reservoir map
+$\Delta \mapsto \varphi(A r + W^{\mathrm{in}} \Delta + b)$ has Lipschitz
+constant $L_{\mathrm{res}} := L_\varphi \|A\|_2 < 1$ (the ESP condition),
+then feedback perturbations are contracted at each step, and the
+teacher-forced bound~\eqref{eq:multistep-bound} remains a valid
+approximation for moderate horizons. In practice, we observe teacher-forced
+and autonomous errors diverging only at long horizons, consistent with the
+contractive reservoir dynamics.
+\end{remark}
+
+
+\subsection{Training and autonomous forecasting}\label{sec:training}
+
+We now describe the concrete training procedure that implements the theoretical framework of \S\S\ref{sec:pipeline}--\ref{sec:error-decomp}. The reservoir $(A, W^{\mathrm{in}}, b, \varphi)$ is fixed as in Section~\ref{sec:prelim-esn}, and we learn only the linear readout $W^{\mathrm{out}}$.
+
+\paragraph{Teacher-forced training.}
+Given a training trajectory $(\hat{u}_0, \ldots, \hat{u}_T)$ in empirical
+LOT coordinates, we compute LOT velocities
+$\hat{\Delta}_t = \hat{u}_{t+1} - \hat{u}_t \in \R^{dm}$ and drive the
+reservoir~\eqref{eq:rc-update-discrete} to obtain states
+$(r_0, \ldots, r_{T-1})$. The readout $W^{\mathrm{out}}$ is trained via
+ridge regression to predict the next velocity:
+\begin{equation}\label{eq:ridge}
+  W^{\mathrm{out}}
+  = \arg\min_{W} \sum_{t=0}^{T-2}
+  \|W r_t - \hat{\Delta}_{t+1}\|^2
+  + \lambda \|W\|_F^2,
+\end{equation}
+where $\lambda > 0$ is the regularization parameter. The closed-form solution $W^{\mathrm{out}} = \hat{\Delta} R^\top (R R^\top + \lambda I)^{-1}$ (where $R$ and $\hat{\Delta}$ stack the reservoir states and target velocities, respectively) means training requires only a single linear solve, with no gradient-based optimization.
+
+\paragraph{Autonomous forecasting.}
+After training, we close the loop. Starting from the final training state
+$r_{T-1}$ and last observed LOT position $\hat{u}_T$, we iterate:
+\begin{align}
+  \widehat{\Delta}_{T+k}
+  &= W^{\mathrm{out}} r_{T+k-1},
+  \label{eq:autonomous-vel} \\
+  r_{T+k}
+  &= \varphi(A r_{T+k-1} + W^{\mathrm{in}} \widehat{\Delta}_{T+k} + b),
+  \label{eq:autonomous-state} \\
+  \widehat{u}_{T+k}
+  &= \hat{u}_T + \sum_{j=1}^k \widehat{\Delta}_{T+j},
+  \label{eq:integrate} \\
+  \widehat{\mu}_{T+k}
+  &= (\widehat{u}_{T+k})_\sharp \hat{\sigma}_m.
+  \label{eq:reconstruct}
+\end{align}
+Equation~\eqref{eq:autonomous-vel} generates the predicted velocity from
+the reservoir state, \eqref{eq:autonomous-state} advances the reservoir using this predicted velocity as input (closing the loop), \eqref{eq:integrate} integrates predicted velocities to obtain LOT positions; and~\eqref{eq:reconstruct} reconstructs measures via pushforward. The stability of this iteration is governed by Proposition~\ref{prop:multistep} and Remark~\ref{rem:autonomous}.
+
+\begin{remark}[Warm-up period]\label{rem:washout}
+In practice, we discard the first $T_{\mathrm{wash}}$ time steps of the driven reservoir trajectory ("washout") and only collect states $(r_t)_{t \geq T_{\mathrm{wash}}}$ when fitting $W^{\mathrm{out}}$. This ensures the reservoir state has converged to the attractor of the driven dynamics, consistent with the echo state property (Definition~\ref{def:esp}). In our experiments (Section~\ref{sec:benchmarks}), we use $T_{\mathrm{wash}} = 100$. The results are empirically insensitive to this choice.
+\end{remark}
+
+\newpage
+\section{Benchmark Dynamical Systems}
+\label{sec:benchmarks}
+
+We validate our forecasting framework on two measure-valued dynamical systems with complementary characteristics. Both evolve empirical measures
+\[
+\mu_t = \frac{1}{N}\sum_{i=1}^N \delta_{\mathbf{x}_i(t)} \in \mathcal{P}_2(\R^2),
+\]
+but exhibit fundamentally different dynamics. The swirling cluster system is a smooth periodic benchmark with coupled rotational and radial motion, while the geodesic transport system is a purely geometric benchmark induced by optimal transport interpolation between two empirical measures.
+
+\subsection{Swirling Cluster}\label{sec:swirl}
+
+\paragraph{System definition.}
+The implemented swirling benchmark is a breathing spiral: particles rotate while their radius oscillates periodically. Starting from particles placed on the unit circle, let
+\begin{equation}\label{eq:swirl-ode}
+\theta_i^{(k)} = \theta_i^{(0)} + 2\pi n_{\mathrm{cyc}}\frac{k}{n_{\mathrm{steps}}}, 
+\qquad
+r^{(k)} = 1 + (r_{\max}-1)\frac{1-\cos\!\left(2\pi n_{\mathrm{cyc}} \frac{k}{n_{\mathrm{steps}}}\right)}{2},
+\end{equation}
+for frames \(k=0,\dots,n_{\mathrm{steps}}-1\), where \(\theta_i^{(0)}=2\pi i/N\). The particle positions are then
+\[
+\mathbf{x}_i^{(k)} = r^{(k)}
+\begin{pmatrix}
+\cos\!\bigl(\theta_i^{(k)}\bigr)\\[0.3ex]
+\sin\!\bigl(\theta_i^{(k)}\bigr)
+\end{pmatrix}.
+\]
+Thus the empirical measure evolution is generated by a smooth periodic family of maps \(X_k\) acting on the initial cloud,
+\begin{equation}\label{eq:swirl-measure}
+\mu_k = (X_k)_\sharp \mu_0.
+\end{equation}
+
+\paragraph{Properties.}
+The breathing-swirl benchmark has the following properties:
+\begin{itemize}
+\item \textbf{Periodic:} the trajectory is periodic with \(n_{\mathrm{cyc}}\) complete radial oscillations over \(n_{\mathrm{steps}}\) frames.
+\item \textbf{Smooth:} both the angular phase and the radius vary smoothly with frame index, yielding a smooth periodic motion.
+\item \textbf{Nondegenerate for LOT:} the radial oscillation breaks exact rotational symmetry, which makes the transport geometry more informative than in the pure fixed-radius rotation case.
+\item \textbf{Coherent:} all particles move as a single structured cloud with shared angular and radial phases.
+\end{itemize}
+
+\paragraph{Initial conditions and trajectory parameters.}
+We initialize \(N\) particles uniformly around the unit circle:
+\begin{equation}\label{eq:swirl-init}
+\mathbf{x}_i^{(0)} = 
+\left(\cos\left(\frac{2\pi i}{N}\right), \sin\left(\frac{2\pi i}{N}\right)\right)^\top, 
+\qquad i = 0, \ldots, N-1.
+\end{equation}
+In the implementation used for the benchmark trajectory, the default parameters are \(n_{\mathrm{steps}}=250\), \(n_{\mathrm{cyc}}=2\), and \(r_{\max}=6.0\). Hence one complete oscillation \(r=1\to r_{\max}\to 1\) lasts
+\[
+\frac{n_{\mathrm{steps}}}{n_{\mathrm{cyc}}}=125
+\]
+frames, which is also the cycle length used for warm-up alignment in the forecasting experiments.
+
+\paragraph{Observation noise.}
+The implementation supports small Gaussian perturbations of particle positions. To model observation uncertainty, we write
+\begin{equation}\label{eq:swirl-noise}
+\widetilde{\mathbf{x}}_i^{(k)} = \mathbf{x}_i^{(k)} + \boldsymbol{\epsilon}_i^{(k)}, 
+\qquad \boldsymbol{\epsilon}_i^{(k)} \sim \mathcal{N}(0, \sigma_{\text{obs}}^2 \mathbf{I}_2),
+\end{equation}
+and form the corresponding noisy empirical measures
+\[
+\widetilde{\mu}_k = \frac{1}{N}\sum_{i=1}^N \delta_{\widetilde{\mathbf{x}}_i^{(k)}}.
+\]
+In the experiments reported in this section, we take \(\sigma_{\text{obs}}=0.02\).
+
+\subsection{Geodesic Transport}\label{sec:geodesic}
+
+\paragraph{System definition.}
+Given two empirical measures \(\mu_0\) (source) and \(\mu_1\) (target) with \(N\) uniformly weighted particles each,
+\[
+\mu_0 = \frac{1}{N}\sum_{i=1}^N \delta_{\mathbf{x}_i^{(0)}}, 
+\qquad 
+\mu_1 = \frac{1}{N}\sum_{i=1}^N \delta_{\mathbf{x}_i^{(1)}},
+\]
+the geodesic transport system traces the \(W_2\)-displacement interpolation between them. The underlying geometric path is
+\begin{equation}\label{eq:geodesic-interp}
+\mu_t = \big((1-t)\,\mathrm{id} + t\,\mathbf{T}^*\big)_\sharp \mu_0, 
+\qquad t \in [0,1],
+\end{equation}
+where \(\mathbf{T}^*: \mathrm{supp}(\mu_0)\to\mathrm{supp}(\mu_1)\) is an optimal transport map solving
+\begin{equation}\label{eq:monge-problem}
+\mathbf{T}^* = \arg\min_{T: T_\sharp \mu_0 = \mu_1} 
+\sum_{i=1}^N \big\|\mathbf{x}_i^{(0)} - T(\mathbf{x}_i^{(0)})\big\|^2.
+\end{equation}
+For empirical measures with equal weights, this reduces to the linear assignment problem
+\begin{equation}\label{eq:assignment}
+\pi^* = \arg\min_{\pi \in S_N} \sum_{i=1}^N 
+\big\|\mathbf{x}_i^{(0)} - \mathbf{x}_{\pi(i)}^{(1)}\big\|^2,
+\end{equation}
+which is solved in code by the Hungarian algorithm. The discrete transport map is then
+\[
+\mathbf{T}^*(\mathbf{x}_i^{(0)}) = \mathbf{x}_{\pi^*(i)}^{(1)}.
+\]
+Accordingly, the particle trajectory at parameter value \(t\) is
+\[
+\mathbf{x}_i(t) = (1-t)\,\mathbf{x}_i^{(0)} + t\,\mathbf{x}_{\pi^*(i)}^{(1)}.
+\]
+
+\paragraph{Properties.}
+\begin{itemize}
+\item \textbf{Geodesic path:} as a function of the interpolation parameter \(t\), the curve \((\mu_t)_{t\in[0,1]}\) is the \(W_2\)-geodesic between \(\mu_0\) and \(\mu_1\).
+\item \textbf{Discrete OT realization:} in the empirical equal-weight setting, the transport map is represented by an assignment between source and target particles.
+\item \textbf{Time-reversible geometry:} reversing the interpolation parameter reverses the particle trajectories.
+\item \textbf{Purely geometric dynamics:} the benchmark is defined by transport interpolation rather than by an autonomous ODE.
+\end{itemize}
+
+\paragraph{Source and target distributions.}
+In the experiments reported here, we instantiate the source and target point clouds passed to the simulator as follows.
+
+\emph{Source (Circle).} Particles are placed uniformly on a circle of radius \(r=0.8\):
+\begin{equation}\label{eq:geo-source}
+\mathbf{x}_i^{(0)} = r 
+\left(\cos\left(\frac{2\pi i}{N}\right), \sin\left(\frac{2\pi i}{N}\right)\right)^\top, 
+\qquad i = 0, \ldots, N-1.
+\end{equation}
+
+\emph{Target (Triangle).} Particles are distributed along the edges of an equilateral triangle of circumradius \(R=1.0\), centered at the origin with one vertex pointing upward. The vertices are
+\begin{equation}\label{eq:triangle-vertices}
+\mathbf{v}_1 = (0, R), \quad 
+\mathbf{v}_2 = \left(R\sin\frac{2\pi}{3}, -\frac{R}{2}\right), \quad 
+\mathbf{v}_3 = \left(-R\sin\frac{2\pi}{3}, -\frac{R}{2}\right),
+\end{equation}
+and the \(N\) target points \(\{\mathbf{x}_i^{(1)}\}_{i=1}^N\) are allocated proportionally along the three edges.
+
+\paragraph{Training trajectory construction.}
+For the forecasting experiments, the implemented cyclical trajectory does not use a piecewise-linear forward/backward concatenation. Instead, it uses a smooth sinusoidal reparameterization of the underlying geodesic:
+\[
+\theta_k = 2\pi n_{\mathrm{cyc}} \frac{k}{n_{\mathrm{steps}}},
+\qquad
+t_k = \frac{1-\cos(\theta_k)}{2},
+\qquad
+k=0,\dots,n_{\mathrm{steps}}-1.
+\]
+The frame-\(k\) empirical measure is therefore
+\begin{equation}\label{eq:geo-pingpong}
+\mu_k = \big((1-t_k)\,\mathrm{id}+t_k\,\mathbf{T}^*\big)_\sharp \mu_0.
+\end{equation}
+With the implementation defaults \(n_{\mathrm{steps}}=400\) and \(n_{\mathrm{cyc}}=2\), the trajectory contains \(400\) frames and two complete oscillations
+\[
+\text{circle} \;\to\; \text{triangle} \;\to\; \text{circle},
+\]
+with cycle length \(400/2=200\). This reparameterization preserves the geometric path in Wasserstein space but yields a velocity magnitude that vanishes at the endpoints and is largest near the midpoint of each half-cycle.
+
+\paragraph{Observation noise.}
+As with the swirling benchmark, we optionally add isotropic Gaussian perturbations to particle positions and use the resulting noisy empirical measures for the LOT+RC pipeline. In the experiments reported here, we use the same observational noise level \(\sigma_{\text{obs}}=0.02\).
+
+\subsection{Compatibility with LOT Theory}\label{sec:verify-compat}
+
+We emphasize that the assumptions in Sections~\ref{sec:lot-faithful} and \ref{sec:rc-theory} are imposed on an underlying continuum idealization of each benchmark, whereas the code uses finite empirical particle discretizations of those latent measure-valued dynamics. Accordingly, the purpose of this subsection is not to claim that the discrete implementation literally satisfies every continuum hypothesis, but rather to explain how each benchmark is modeled by a smooth measure evolution to which the LOT theory applies, and how the numerical experiments approximate that model.
+
+\paragraph{Continuum idealization versus empirical implementation.}
+For both benchmarks, let \(\mu_t^{\mathrm{cont}}\in\mathcal P_2(\R^2)\) denote an absolutely continuous measure with compact support, evolving either by a smooth flow map or by displacement interpolation. The particle clouds used in the experiments are then interpreted as empirical approximations of \(\mu_t^{\mathrm{cont}}\), obtained by deterministic discretization or sampling, optionally followed by small observational perturbations. Thus the LOT coordinates and LOT velocities computed in code should be viewed as finite-particle surrogates for the continuum objects analyzed earlier.
+
+\paragraph{Swirling cluster.}
+To align the swirling benchmark with the LOT theory, we interpret it through a smooth, nondegenerate continuum model. Let \(\mu_0^{\mathrm{cont}}\) be an absolutely continuous probability measure with compact support whose density is not exactly rotationally symmetric. Let \(X_t:\R^2\to\R^2\) be a smooth family of diffeomorphisms representing the latent breathing-spiral dynamics, combining angular rotation with radial oscillation. We then set
+\[
+\mu_t^{\mathrm{cont}}=(X_t)_\sharp \mu_0^{\mathrm{cont}}.
+\]
+Under this idealization, the flow is smooth in time and space, so the corresponding Eulerian velocity field is regular and admits the Lagrangian description required by the LOT-faithfulness theory. Moreover, for a suitable absolutely continuous reference measure \(\sigma\) with compact convex support, Brenier's theorem yields unique optimal maps \(T_\sigma^{\mu_t^{\mathrm{cont}}}\), and stability of optimal transport implies regular dependence of these maps on \(t\). The radial oscillation is important here: it breaks the exact rotational symmetry that would otherwise make the pure fixed-radius circle benchmark ambiguous from the standpoint of OT and LOT velocity recovery.
+
+\paragraph{Geodesic transport.}
+For the geodesic benchmark, we likewise distinguish between the continuum model and the empirical implementation. At the continuum level, let \(\mu_0^{\mathrm{cont}}\) and \(\mu_1^{\mathrm{cont}}\) be absolutely continuous probability measures with compact support, chosen as smooth thickenings of the source and target geometries used in the experiments. For example, one may take \(\mu_0^{\mathrm{cont}}\) to be supported on a thin annular or disk-like region and \(\mu_1^{\mathrm{cont}}\) on a rounded or thickened triangular region. Let \(T\) be the Brenier map from \(\mu_0^{\mathrm{cont}}\) to \(\mu_1^{\mathrm{cont}}\). Then the latent geodesic is
+\[
+\mu_t^{\mathrm{cont}}=\bigl((1-t)\,\mathrm{id}+t\,T\bigr)_\sharp \mu_0^{\mathrm{cont}},\qquad t\in[0,1].
+\]
+This curve is absolutely continuous in \(W_2\), and for any suitable absolutely continuous reference measure \(\sigma\), the associated LOT coordinates inherit the regularity needed in Section~\ref{sec:lot-faithful}. The code implements a finite empirical approximation of this picture by replacing the continuum Brenier map with an assignment-based transport map between particle clouds. When the experiments use the cyclical trajectory above, this should be interpreted as a smooth time-reparameterization of the same underlying geodesic path rather than as a different geometric evolution.
+
+% =========================
+\section{Experimental Setup}
+\label{sec:setup}
+
+We now describe the experimental design, including reference measure construction, reservoir architecture, training protocol, and autonomous forecasting procedure.
+
+\subsection{Reference Measure Ablation Study}\label{sec:ref-ablation}
+
+A key design choice in the LOT framework is the selection of the reference measure $\sigma$ (Assumption~\ref{ass:lag-compat}). While a canonical choice is $\sigma = \mu_0$ (the initial configuration), the quality of the LOT embedding depends on how well $\sigma$ approximates the typical support geometry visited by the dynamics. To assess sensitivity to this choice, we conduct a comprehensive ablation study.
+
+\paragraph{Reference types.}
+For each system, we construct several distinct reference measures:
+
+\begin{enumerate}
+\item \textbf{Canonical references (clean geometry).}
+\begin{itemize}
+\item \texttt{clean\_circle}: Uniform measure on a circle of radius $0.8$ (geodesic source / swirling initial).
+\item \texttt{clean\_circle\_small}, \texttt{clean\_circle\_large} (swirling only): Radii $0.5$ and $1.5$.
+\item \texttt{clean\_triangle} (geodesic only): Uniform measure on triangle edges.
+\end{itemize}
+
+\item \textbf{Generic priors (domain-agnostic).}
+\begin{itemize}
+\item \texttt{uniform\_square}: Uniform measure on $[-2,2]^2$.
+\item \texttt{gaussian\_iso}: Isotropic Gaussian $\mathcal{N}(0, I_2)$.
+\end{itemize}
+
+\item \textbf{Data-driven snapshots.}
+\begin{itemize}
+\item \texttt{snapshot\_begin}: Empirical measure at $t = 0$.
+\item \texttt{snapshot\_middle}: Empirical measure at $t = T/2$.
+\item \texttt{snapshot\_end}: Empirical measure at $t = T$.
+\end{itemize}
+\end{enumerate}
+
+\paragraph{Reference discretization.}
+To study the effect of reference resolution, we subsample each reference at multiple resolutions. Given particle count $N$, we construct references $\sigma$ with $R = \alpha_{\text{ref}} N$ points, where
+\[
+\alpha_{\text{ref}} \in \{0.10, 0.25, 0.50, 0.75, 1.00\}.
+\]
+For example, when $N = 500$, we test $R \in \{50, 125, 250, 375, 500\}$. Using a coarser reference ($R <N$) results in a lower-dimensional LOT representation (dimension $2R$) compared to the raw particle positions ($2N$). This reduces computational cost of solving the OT problem (Sinkhorn scaling is $O(R^2)$ to $O(R^3)$), but risks approximation error.
+
+\paragraph{LOT map computation.} At each time $t$, we solve the discrete optimal transport problem between $\sigma$ ($R$ points) and $\mu_t$ ($N$ points) using entropic regularization (Sinkhorn) with $\varepsilon = 0.01$. The cost matrix is
+\begin{equation}
+M_{ij} = \|x_i^\sigma - x_j^{\mu_t}\|^2, \quad i = 1,\dots,R,\; j = 1,\dots,N.
+\end{equation}
+\review{Rename the Sinkhorn regularization parameter in this section to avoid overloading $\varepsilon$, which already denotes compatibility throughout the theory.}
+Let $P^* \in \R^{R\times N}$ be the optimal coupling. The transport map $T_\sigma^{\mu_t}:\mathrm{supp}(\sigma)\to\R^2$ is evaluated via barycentric projection \eqref{eq:baryproj-prelim}:
+\begin{equation}\label{eq:bary-impl}
+T_\sigma^{\mu_t}(x_i^\sigma) 
+= \sum_{j=1}^N \widetilde{P}_{ij}\, x_j^{\mu_t}, 
+\qquad 
+\widetilde{P}_{ij} = \frac{P^*_{ij}}{\sum_{k=1}^N P^*_{ik}},
+\end{equation}
+yielding the discrete LOT coordinate $u_t \in \R^{R \times 2}$. The input for the ESN is the discrete LOT velocity, which is the simple difference between successive LOT coordinates:
+\begin{equation}\label{eq:lot-vel-discrete}
+\Delta_t := T_\sigma^{\mu_{t+1}} - T_\sigma^{\mu_t} \in \R^{R \times 2}.
+\end{equation}
+This confirms that the input to the ESN, $\Delta_t$, is indeed a finite vector of dimension $m=2R$, consistent with the finite-dimensional ESN framework established in Section~\ref{sec:rc-theory}.
+
+\paragraph{Notation.}
+We index reference configurations by $(\text{kind}, \alpha_{\text{ref}}, N)$. For instance, $(\texttt{clean\_circle}, 1.00, 500)$ denotes a full-resolution circular reference for $N = 500$ particles.
+
+\subsection{Reservoir Architecture}\label{sec:rc-arch}
+
+The model uses a sparse echo state network with a leaky integrator for state updates. The core ESN parameters are as follows: 
+\begin{itemize}
+\item \textbf{Reservoir size.} $n_r = \alpha_{\text{res}} N$ with $\alpha_{\text{res}} \in \{0.5, 1.0, 1.5, 2.0, 5.0\}$
+
+\item \textbf{Recurrent matrix.} $W \in \R^{n_r \times n_r}$ initialized with i.i.d.\ $\mathcal{N}(0,1)$ entries, then sparsified by retaining each entry with probability $p = 0.1$ (10\% density). We normalize to spectral radius $\rho(W) = 0.7 < 1$ to ensure ESP holds according to \ref{prop:esp}
+\begin{equation}
+W \leftarrow 0.7 \cdot \frac{W}{\max_i |\lambda_i(W)|}.
+\end{equation}
+
+\item \textbf{Input matrix.} $W_{\text{in}} \in \R^{n_r \times d_{\text{in}}}$ with entries drawn from $\mathcal{N}(0,1)$ and scaled by $\sigma_{\text{in}} = 0.1$.
+
+\item \textbf{Activation.} $\sigma_{\mathrm{act}}(z) = \tanh(z)$ (Lipschitz constant $L_\sigma = 1$).
+
+\item \textbf{Bias.} No additive bias (zero vector).
+\end{itemize}
+
+\paragraph{Input and output dimensions.} The dimension of the input $d_{\text{in}}$ and output $d_{\text{out}}$ depends on the forecasting task:
+\begin{itemize}
+\item \textbf{RAW Forecasting (Direct Positions):} the input and output is the flattened vector for all $N$ positions
+\[
+d_{\text{in}} = d_{\text{out}} = 2N
+\]
+\item \textbf{LOT velocity Forecasting (The Proposed Method):} the input and output is the flattened vector of the $R$ LOT velocities ($\Delta_t$)
+\[
+d_{\text{in}} = d_{\text{out}} = 2R = 2\alpha_{\text{ref}} N
+\]
+\end{itemize}
+When the reference resolution $\alpha_{\text{ref}} = 1.0$, both RAW and LOT have $d_{\text{in}} = 2N$; for $\alpha_{\text{ref}} < 1.0$, LOT representation achieves a compressed input/output space ($d_{\text{in}} < 2N$), which is a key advantage of the LOT method.
+
+\paragraph{State update.}
+The ESN uses a leaky integrator to update its state, controlled by the leak rate $\alpha_{\text{leak}} = 0.7$:
+\begin{equation}\label{eq:state-update}
+r_{t+1} = (1 - \alpha_{\text{leak}})\, r_t 
++ \alpha_{\text{leak}} \cdot \tanh\big(W r_t + W_{\text{in}} u_{t+1}\big).
+\end{equation}
+Leaky integration allows the reservoir to forget old information gradually (controlled by $1-\alpha_{\text{leak}}$) and stabilize the state update, which is often beneficial for time series.
+
+\paragraph{Readout.}
+The output $y_t$ is computed using an affine readout, which incorporates a learned bias into the output:
+\begin{equation}\label{eq:readout}
+y_t = W_{\text{out}}^\top 
+\begin{bmatrix} r_t \\ 1 \end{bmatrix},
+\end{equation}
+The readout matrix $W_{\text{out}}$ is now sized $\R^{(n_r + 1) \times d_{\text{out}}}$. The extra dimension corresponding to the constant accounts for an output bias term that is learned during the ridge regression phase \ref{eq:ridge}.
+
+\subsection{Training Protocol}\label{sec:training-protocol}
+
+The training process uses a single, short window of $T_{\text{train}} = 50$ time steps for both washout and readout training. 
+\begin{itemize}
+\item \textbf{Initialization:} the reservoir starts from an arbitrary state, $r_0 = \mathbf{0}$
+
+\item \textbf{Driving:} the reservoir is driven (teacher-forced) using the correct inputs for $T_\text{train}$ steps, generating $\{r_1, \dots, r_{T_{\text{train}}}\}$
+\begin{itemize}
+    \item \textbf{RAW Inputs:} the reservoir is driven by the next particle position: $u_{t+1} = \text{vec}(\mathbf{x}(t+1))$. The target is the predicted position $u_{t+2}$
+
+    \item \textbf{LOT Inputs:} the reservoir is driven by the LOT velocities: $u_{t+1} = \Delta_{t+1}$. The target is the next predicted velocity $\Delta_{t+2}$
+\end{itemize}
+
+\item \textbf{Combined Function:} by using a leaky integrator (with $\alpha_{\text{leak}}=0.7$), the short $T_{\text{train}}=50$ period is deemed sufficient both to wash out the initial condition $r_0$ (allowing the state to settle onto the driven attractor) and to collect the stable states for the readout training.
+\end{itemize}
+
+\paragraph{Ridge regression.} The goal is to solve the optimal readout matrix $W_{\text{out}}$ (which includes the bias term) using the collected reservoir states and target outputs. The data is organized into two matrices. The state matrix $(X)$ contains the augmented reservoir states, where each row is a time step's state augmented with a '1' for the bias term. The target matrix $(Y)$ contains the true targets corresponding to the next time step (the desired output). 
+\begin{equation}
+X = 
+\begin{bmatrix} 
+r_1^\top & 1 \\ 
+\vdots & \vdots \\ 
+r_{T_{\text{train}}}^\top & 1 
+\end{bmatrix},
+\qquad
+Y = 
+\begin{bmatrix} 
+u_2^\top \\ 
+\vdots \\ 
+u_{T_{\text{train}}+1}^\top 
+\end{bmatrix},
+\end{equation}
+where $u_t$ is either RAW positions or LOT velocities, depending on the experiment. The readout matrix is found by solving the regularized least-squares problem analytically:
+\begin{equation}\label{eq:ridge-solve}
+W_{\text{out}} = (X^\top X + \lambda I_{n_r + 1})^{-1} X^\top Y,
+\end{equation}
+
+Different regularization parameters are used for the two forecasting tasks:
+\[
+\lambda_{\text{RAW}} = 10^{-4}, 
+\qquad 
+\lambda_{\text{LOT}} = 10^{-6}.
+\]
+The smaller $\lambda$ for LOT is justified theoretically. The LOT representation works in $L^2(\sigma)$, which is expected to yield a smoother, more regular velocity field. Smoother targets require less regularization to prevent overfitting, as the underlying function is inherently less noisy than the instantaneous particle positions used in the RAW method. This suggests the LOT embedding is robust and less susceptible to the noise present in the training data.
+
+\subsection{Autonomous Forecasting}\label{sec:forecast-protocol}
+
+The Autonomous Forecasting Protocol is the procedure for running the trained ESN in a closed-loop (auto regressive) manner to predict the measure dynamics beyond the training data.
+
+The forecasting runs for a total horizon of $H = 48$ steps, starting immediately after the $T_{\text{train}}=50$ step training window.
+
+\paragraph{Initialization ($t_0 = 50$).} The loop is initialized with the state and data from the end of the training period:
+\begin{itemize}
+\item \textbf{Reservoir state ($r_{t_0}$):} this is the final state of the reservoir after being driven through the $T_{\text{train}}$ steps (the last state collected before solving for $W_{\text{out}}$)
+
+\item \textbf{RAW Forecasting:} the last known particles $u_{t_0}$ are stored
+
+\item \textbf{LOT Forecasting :} the last known LOT map $T_\sigma^{\mu_{t_0}}$ and the last velocity $\Delta_{t_0}$ are stored
+\end{itemize}
+
+\paragraph{Autoregressive iteration.} The core loop predicts the next state and feeds the prediction back into the network. Running for $h = 1,\dots,H$ (with $H = 48$):
+\begin{enumerate}
+\item The linear readout $W_{\text{out}}$ predicts the next input \chg{$\widehat{u}$}, which is the next position for RAW or the next velocity for LOT
+\[
+\widehat{u}_{t_0+h} = W_{\text{out}}^\top \begin{bmatrix} r_{t_0+h-1} \\ 1 \end{bmatrix}.
+\]
+
+\item The predicted input ($\widehat{u}_{t_0+h}$) is immediately fed back into the network (multiplied by $W_{\text{in}}$) to compute the next reservoir state $r_{t_0+h}$ via the leaky integration formula
+\[
+r_{t_0+h} = (1 - \alpha_{\text{leak}})\, r_{t_0+h-1} 
++ \alpha_{\text{leak}} \cdot \tanh\big(W r_{t_0+h-1} + W_{\text{in}} \widehat{u}_{t_0+h}\big).
+\]
+
+\item The predicted input becomes the stored input for the next step's reservoir update
+\[
+u_{t_0+h} \gets \widehat{u}_{t_0+h}
+\]
+
+\end{enumerate}
+
+\paragraph{Reconstruction to measures ($\widehat{u_t}$).} The forecast signals $\widehat{u}$) must be converted back into physical measure distributions ($\widehat{\mu}_t$):
+
+\begin{itemize}
+\item \textbf{RAW Forecasting Reconstruction:} the predicted vector $\widehat{u}_t \in \mathbb{R}^{2N}$ (which represents the particle positions) is simply reshaped back into $N$ two-dimensional position vectors, $\widehat{\mathbf{x}}(t)$. The measure $\widehat{\mu}_t$ is then constructed as the empirical measure over these predicted particle positions.
+
+\item \textbf{LOT Forecasting Reconstruction:} the predicted $\widehat{\Delta}_t$ represents the velocity. This velocity must be integrated to find the new position (the LOT map). The forecast LOT map is updated by accumulating the predicted velocities onto the previous forecast map:
+\begin{equation}\label{eq:map-recon}
+\widehat{T}_\sigma^{\mu_{t+1}} 
+= \widehat{T}_\sigma^{\mu_t} + \widehat{\Delta}_t,
+\end{equation}
+This iterative summation is initialized with the last known true map: $\widehat{T}_\sigma^{\mu_{t_0}} = T_\sigma^{\mu_{t_0}}$. The predicted LOT map $\widehat{T}_\sigma^{\mu_t}$ is applied to the reference particle support ($x_i^\sigma$) to generate the forecast particle positions $\widehat{\mathbf{x}}_i(t)$.
+\[
+\widehat{\mathbf{x}}_i(t) = \widehat{T}_\sigma^{\mu_t}(x_i^\sigma),
+\quad
+\widehat{\mu}_t = \frac{1}{N} \sum_{i=1}^N \delta_{\widehat{\mathbf{x}}_i(t)}.
+\]
+The final measure $\widehat{\mu}_t$ is the empirical measure over these reconstructed positions. This process utilizes the stability advantage of velocity forecasting (linear error growth) proven in Proposition \ref{prop:multistep}.
+\end{itemize}
+
+\subsection{Experimental Parameters}\label{sec:exp-params}
+
+Table~\ref{tab:params} in Appendix \ref{table} summarizes the experimental parameters used in all runs.
+
+% =========================
+\section{Evaluation Metrics}\label{sec:metrics}
+
+We evaluate forecasts from complementary geometric and temporal perspectives in order to distinguish pointwise measure error, LOT-space prediction error, phase error, and backend consistency.
+
+We assess forecast quality of the autonomous measure forecasts ($\widehat{\mu}_t$) against the ground truth ($\mu_t^{\text{true}}$) over the evaluation horizon ($H=48$ steps) using three metrics:
+\begin{enumerate}
+\item \textbf{Point-wise alignment:} instantaneous distance between predicted and ground-truth measures at each time step
+
+\item \textbf{Temporally-aligned error:} alignment-aware evaluation via (soft) dynamic time warping to account for phase shifts;
+
+\item \textbf{Backend validation:} comparison of two independent distance computation methods to ensure robustness.
+\end{enumerate}
+
+All metrics are computed on the autonomous forecast horizon $H = 48$ steps following the warm-up phase. Let $\{\widehat{\mu}_t\}_{t=1}^H$ denote the predicted measure sequence and $\{\mu_t^{\text{true}}\}_{t=1}^H$ the ground truth.
+
+% -------------------------
+\subsection{Point-Wise Wasserstein Distance}\label{sec:metric-w2}
+
+The primary metric is the 2-Wasserstein distance between predicted and ground-truth measures at each time step $t$:
+\begin{equation}\label{eq:w2-diag}
+\mathcal{E}_{W_2}(t) := W_2(\widehat{\mu}_t, \mu_t^{\text{true}}).
+\end{equation}
+
+For empirical measures with $N$ particles and uniform weights, we approximate $W_2^2$ via the \emph{debiased Sinkhorn divergence} \cite{feydy2019interpolating}. Let $W_\varepsilon(\mu, \nu)$ denote the entropic-regularized OT cost with parameter $\varepsilon$; we set
+\begin{equation}\label{eq:sinkhorn-debiased}
+S_\varepsilon(\widehat{\mu}_t, \mu_t^{\text{true}}) 
+= W_\varepsilon(\widehat{\mu}_t, \mu_t^{\text{true}})
+- \frac{1}{2}W_\varepsilon(\widehat{\mu}_t, \widehat{\mu}_t)
+- \frac{1}{2}W_\varepsilon(\mu_t^{\text{true}}, \mu_t^{\text{true}}).
+\end{equation}
+For suitably small $\varepsilon$, one has $S_\varepsilon(\widehat{\mu}_t, \mu_t^{\text{true}}) \approx W_2^2(\widehat{\mu}_t, \mu_t^{\text{true}})$, and we use $\sqrt{S_\varepsilon}$ as a surrogate for $W_2$ in plots and summaries.
+
+We set $\varepsilon$ adaptively based on the geometry of the reference measure $\sigma$:
+\begin{equation}\label{eq:eps-heuristic}
+\varepsilon = \alpha_{\text{eps}} \cdot \mathrm{median}\bigl\{\|x_i^\sigma - x_j^\sigma\|^2 : i < j\bigr\},
+\quad \alpha_{\text{eps}} = 0.05,
+\end{equation}
+so that $\varepsilon$ scales with the typical inter-particle spacing in $\sigma$, balancing numerical stability and fidelity to the true $W_2$ distance.
+
+We report the time-averaged Wasserstein error
+\begin{equation}
+\overline{\mathcal{E}}_{W_2} = \frac{1}{H}\sum_{t=1}^H \mathcal{E}_{W_2}(t),
+\end{equation}
+alongside full error trajectories $t \mapsto \mathcal{E}_{W_2}(t)$.
+
+% -------------------------
+\subsection{LOT Velocity Error in $L^2(\sigma)$}\label{sec:metric-lot}
+
+For experiments using LOT velocities (Section~\ref{sec:discrete-time-lot}), we additionally measure error directly in the LOT embedding space. The reservoir predicts displacement fields $\widehat{\Delta}_t \in L^2(\sigma; \mathbb{R}^2)$, which we compare to ground-truth LOT velocities $\Delta_t^{\text{true}}$ via the $L^2(\sigma)$ norm:
+\begin{equation}\label{eq:lot-vel-error}
+\mathcal{E}_{\mathrm{LOT}}(t) 
+:= \|\widehat{\Delta}_t - \Delta_t^{\text{true}}\|_{L^2(\sigma)}
+= \left(\sum_{i=1}^R w_i \,\big\|\widehat{\Delta}_t(x_i^\sigma) - \Delta_t^{\text{true}}(x_i^\sigma)\big\|^2\right)^{1/2},
+\end{equation}
+where $x_i^\sigma$ and $w_i$ are the support points and weights of the reference measure $\sigma$, and $R$ is the reference resolution.
+
+This metric directly quantifies the accuracy of the tangent-space representation learned by the reservoir, independent of the reconstruction step \eqref{eq:map-recon}. Large LOT velocity errors indicate that the reservoir has failed to capture the linearized dynamics on $L^2(\sigma)$, even if the reconstructed measures happen to align well due to error cancellation.
+
+% -------------------------
+\subsection{Temporally-Aligned Error via Soft-DTW}\label{sec:metric-dtw}
+
+Point-wise metrics \eqref{eq:w2-diag} and \eqref{eq:lot-vel-error} assume perfect temporal synchronization: they compare $\widehat{\mu}_t$ to $\mu_t^{\text{true}}$ at matching indices $t$. However, autonomous forecasts often exhibit \emph{phase shifts}: the predicted dynamics have the correct shape but are slightly advanced or delayed. To account for this, we employ \emph{soft dynamic time warping} (soft-DTW) \cite{cuturi2017soft} on the sequence of measures.
+
+We construct a matrix $\Delta \in \mathbb{R}^{H \times H}$ where each entry measures the distance between a predicted measure at index $t$ and a true measure at index $s$:
+\begin{equation}\label{eq:delta-matrix}
+\Delta_{t,s} := D(\widehat{\mu}_t, \mu_s^{\text{true}}),
+\end{equation}
+for some distance function $D$ (specified in Section~\ref{sec:metric-backends}). The diagonal $\{\Delta_{t,t}\}_{t=1}^H$ corresponds to the unaligned (point-wise) error.
+
+Soft-DTW computes a smooth analogue of the optimal alignment cost via the dynamic programming recursion with temperature parameter $\gamma > 0$:
+\begin{equation}\label{eq:softdtw-recursion}
+R_{t,s} = \Delta_{t,s} + \mathrm{softmin}_\gamma\bigl(R_{t-1,s}, R_{t,s-1}, R_{t-1,s-1}\bigr),
+\end{equation}
+where
+\begin{equation}
+\mathrm{softmin}_\gamma(a, b, c) := -\gamma \log\bigl(e^{-a/\gamma} + e^{-b/\gamma} + e^{-c/\gamma}\bigr),
+\end{equation}
+with boundary conditions $R_{0,0} = 0$ and $R_{t,0} = R_{0,s} = +\infty$ for $t, s > 0$. The soft-DTW value is
+\[
+\mathrm{sDTW}_\gamma(\widehat{\mu}, \mu^{\text{true}}) := R_{H,H}.
+\]
+
+We set $\gamma$ adaptively based on the scale of $\Delta$:
+\begin{equation}\label{eq:gamma-heuristic}
+\gamma = 0.1 \cdot \mathrm{median}\{\Delta_{t,s} : 1 \le t,s \le H\}.
+\end{equation}
+
+For interpretability, we also compute the \emph{hard} DTW alignment path using the same cost matrix $\Delta$ (i.e., taking the limit $\gamma \to 0$ and replacing $\mathrm{softmin}_\gamma$ by the standard $\min$). Let $\mathcal{P}$ denote the optimal DTW path and define
+\begin{equation}\label{eq:align-improve}
+\overline{\Delta}_{\mathrm{diag}} = \frac{1}{H}\sum_{t=1}^H \Delta_{t,t}, 
+\qquad
+\overline{\Delta}_{\mathrm{path}} = \frac{1}{|\mathcal{P}|}\sum_{(t,s)\in\mathcal{P}} \Delta_{t,s}.
+\end{equation}
+We quantify the benefit of temporal alignment by
+\begin{equation}
+\mathrm{Improvement} = 100 \times \frac{\overline{\Delta}_{\mathrm{diag}} - \overline{\Delta}_{\mathrm{path}}}{\overline{\Delta}_{\mathrm{diag}}}\,\%.
+\end{equation}
+Positive improvement indicates that the forecast exhibits phase shifts but maintains qualitative fidelity to the true dynamics.
+
+% -------------------------
+\subsection{Distance Computation Backends}\label{sec:metric-backends}
+
+To ensure robustness of our evaluation, we implement two independent methods for computing the time–time cost matrix $\Delta$ in \eqref{eq:delta-matrix}.
+
+\subsubsection{LOT Embedding + $L^2(\sigma)$ Distance (LLT+L2)}
+
+This backend exploits the LOT framework directly. For each time step $t$ and $s$, we compute the LOT embeddings
+\begin{equation}
+\varphi_t := T_\sigma^{\widehat{\mu}_t} - \mathrm{id}, 
+\qquad 
+\varphi_s^{\text{true}} := T_\sigma^{\mu_s^{\text{true}}} - \mathrm{id},
+\end{equation}
+via the barycentric projection \chg{\eqref{eq:baryproj-prelim}}. The cost is then
+\begin{equation}\label{eq:delta-llt-l2}
+\Delta_{t,s}^{\mathrm{LLT}} 
+:= \|\varphi_t - \varphi_s^{\text{true}}\|_{L^2(\sigma)}^2 
+= \sum_{i=1}^R w_i \,\big\|\varphi_t(x_i^\sigma) - \varphi_s^{\text{true}}(x_i^\sigma)\big\|^2.
+\end{equation}
+
+\paragraph{Properties.}
+\begin{itemize}
+\item \textbf{Fast:} Only $H$ transport maps (one per time step) are required; all pairwise distances are then inner products in $L^2(\sigma)$.
+\item \textbf{Consistent with training:} For LOT-velocity experiments, this measures error in the same representation the reservoir is trained on.
+\item \textbf{Linearized geometry:} Reflects distances in the tangent space $L^2(\sigma)$ rather than directly in $(\mathcal{P}_2(\mathbb{R}^2), W_2)$.
+\end{itemize}
+
+\subsubsection{Debiased Sinkhorn Divergence}
+
+The second backend computes pairwise Wasserstein distances directly on the measures. For each $(t, s)$ we set
+\begin{equation}\label{eq:delta-sinkhorn}
+\Delta_{t,s}^{\mathrm{Sink}} := S_\varepsilon(\widehat{\mu}_t, \mu_s^{\text{true}}),
+\end{equation}
+using the debiased Sinkhorn divergence \eqref{eq:sinkhorn-debiased} with the same $\varepsilon$ heuristic \eqref{eq:eps-heuristic}.
+
+\paragraph{Properties.}
+\begin{itemize}
+\item \textbf{Direct:} Measures Wasserstein geometry without passing through the LOT chart.
+\item \textbf{Expensive:} Requires $O(H^2)$ OT solves to fill the full matrix.
+\item \textbf{Validation role:} Serves as a gold-standard backend to validate that LLT+L2 faithfully approximates the Wasserstein distances.
+\end{itemize}
+
+Due to computational cost, we compute $\Delta^{\mathrm{Sink}}$ only on a validation window of size $(2w+1) \times (2w+1)$ centered at the middle of the forecast horizon. With $w = 6$, this yields a $13 \times 13$ window around $(t_0,s_0) = (H/2,H/2)$.
+
+We assess agreement between backends via Pearson correlation on this window:
+\begin{equation}
+r = \mathrm{corr}\Bigl(
+\mathrm{vec}\bigl(\Delta^{\mathrm{LLT}}_{[t_0-w:t_0+w,\; s_0-w:s_0+w]}\bigr),\;
+\mathrm{vec}\bigl(\Delta^{\mathrm{Sink}}\bigr)
+\Bigr).
+\end{equation}
+Strong correlation (empirically $r > 0.95$) indicates that the LLT+L2 backend faithfully approximates Wasserstein distances, justifying its use for the full $H \times H$ evaluation.
+\review{Replace the empirical threshold here with the actual measured range once the final runs are fixed.}
+
+
+
+\section{Results and Ablation Studies}
+\label{sec:results}
+\review{Replace the bullet list below with actual quantitative findings, figure references, and comparisons once the final experiments are fixed.}
+The LOT sweep lets us answer:
+\begin{itemize}
+    \item Can we use a generic prior (Gaussian) instead of domain-specific geometry?
+    \item Does the reference need to match the initial condition exactly?
+    \item Is coarser discretization (10\% or 25\%) sufficient to save computation?
+    \item Do adaptive snapshots (middle/end) work better than static references?
+\end{itemize}
+
+
+\section{Conclusion}\label{sec:conclusion}
+We have reorganized the manuscript around a clearer mathematical narrative: first establishing LOT as a faithful representation of measure-valued dynamics, then showing how reservoir computing acts on the resulting Hilbert-space signal, and finally specifying the experimental protocol needed to test that theory. The main practical message is that forecasting LOT velocities yields a representation that is geometrically meaningful, computationally tractable, and naturally compatible with echo state networks.
+
+\section{Additional data sets}
+ Human Actions (walk/jog/run; static camera):
+\begin{itemize}
+    \item \nolinkurl{https://www.csc.kth.se/cvap/actions/}
+    \item \nolinkurl{https://iapr-tc4.org/gait-datasets/} \\
+\end{itemize}
+
+\noindent Actions as space time shapes: 
+\begin{itemize}
+    \item  \nolinkurl{https://www.wisdom.weizmann.ac.il/~vision/SpaceTimeActions.html?}
+\end{itemize}
+
+\noindent Dance motion:
+\begin{itemize}
+    \item \nolinkurl{https://google.github.io/aistplusplus_dataset/?}
+\end{itemize}
+
+
+
+
+\newpage 
+% =========================
+\bibliographystyle{plainnat}
+\bibliography{lit}
+
+% =========================
+
+\appendix
+
+\section{Proofs Deferred from the Main Text}
+
+\subsection{Proof of Proposition~\ref{thm:lot-faithful}}
+\label{app:proof-lot-faithful}
+\begin{proof}
+By Assumption~\ref{ass:lag-compat}(ii), for $\sigma$-a.e.\ $x$ we can write
+\[
+u_t(x) = T_\sigma^{\mu_t}(x) = X_t\bigl(T_\sigma^{\mu_0}(x)\bigr).
+\]
+Differentiating in $t$ and using the flow equation for $X_t$,
+\[
+\dot u_t(x)
+= \frac{d}{dt} X_t\bigl(T_\sigma^{\mu_0}(x)\bigr)
+= v_t\bigl(X_t(T_\sigma^{\mu_0}(x))\bigr)
+= v_t\bigl(T_\sigma^{\mu_t}(x)\bigr)
+= v_t\bigl(u_t(x)\bigr),
+\]
+establishing \eqref{eq:velocity-correspondence}. The first step uses the flow representation ~\eqref{eq:flow-representation}. The second applies the defining ODE~\eqref{eq:flow-map} for $X_t$. The third substitutes the flow representation again; and the fourth uses the definition $u_t = T_\sigma^{\mu_t}$.
+
+For \eqref{eq:kinetic-isometry}, apply the change-of-variables formula under the pushforward $(T_\sigma^{\mu_t})_\sharp\sigma = \mu_t$:
+\begin{align*}
+\|\dot u_t\|_{L^2(\sigma)}^2
+&= \int_{\R^d} \|\dot u_t(x)\|^2 \, d\sigma(x) \\
+&= \int_{\R^d} \bigl\|v_t\bigl(T_\sigma^{\mu_t}(x)\bigr)\bigr\|^2 \, d\sigma(x)
+\quad\text{(by \eqref{eq:velocity-correspondence})} \\
+&= \int_{\R^d} \|v_t(y)\|^2 \, d\mu_t(y) \\
+&= \|v_t\|_{L^2(\mu_t)}^2.
+\end{align*}
+Taking square roots yields \eqref{eq:kinetic-isometry}.
+\end{proof}
+
+\subsection{Proof of Proposition~\ref{prop:lot-almost-isometry}}
+\label{app:proof-lot-almost-isometry}
+\begin{proof}
+We verify that the setting falls within the framework of
+\cite[Theorem~A.4]{cloninger2023lotwassmap} and then apply that result.
+The measures $\{\mu_t\}_{t\in[0,T]}$ arise as pushforwards of a single
+template measure $\mu_0$ under the flow maps~$X_t$:
+\[
+  \mu_t = (X_t)_\sharp\,\mu_0, \qquad t\in[0,T].
+\]
+We define the transformation family
+$\mathcal{H}:=\{X_t : t\in[0,T]\}$. In the notation
+of~\cite{cloninger2023lotwassmap}, the template measure is
+$\mu:=\mu_0$, and the data measures are
+$\mu_t = h_\sharp\mu_0$ for $h = X_t\in\mathcal{H}$. The
+hypotheses~(i)--(iii) of
+\cite[Theorem~A.4]{cloninger2023lotwassmap} hold for the triple
+$(\sigma,\mu_0,\mathcal{H})$, as does the
+$\varepsilon$-compatibility condition, by
+Assumption~\ref{ass:regularity}(i)--(iv).
+
+Fix $s,t\in[0,T]$ and set $h_1 = X_s$, $h_2 = X_t$, so that
+$(h_1)_\sharp\mu_0 = \mu_s$ and $(h_2)_\sharp\mu_0 = \mu_t$.
+Since $\mathcal{H}$ is $\varepsilon$-compatible and conditions
+(i)--(iii) hold, \cite[Theorem~A.4]{cloninger2023lotwassmap}
+gives
+\begin{equation}\label{eq:lot-two-term}
+  \left| W_2(\mu_s,\mu_t)
+       - \bigl\|T_\sigma^{\mu_s}
+           - T_\sigma^{\mu_t}\bigr\|_{L^2(\sigma)} \right|
+  < 2\!\left(\varepsilon
+       + C_{d,p,\Omega,a^{-1}\!A^p M_p}\,
+         \varepsilon^{\frac{p}{6p+16d}}\right).
+\end{equation}
+The bound~\eqref{eq:lot-two-term} is exactly
+\cite[Theorem~A.4]{cloninger2023lotwassmap} applied to our
+transformation family $\mathcal{H}$. Our contribution is the
+identification of the Lagrangian flow maps $\{X_t\}$ as the
+abstract transformations and the verification (via
+Assumption~\ref{ass:regularity}) that the hypotheses of
+\cite{cloninger2023lotwassmap} are satisfied in this dynamical
+systems setting. 
+
+$C_{d,p,\Omega,a^{-1}\!A^p M_p}$ comes from the quantitative stability of Brenier maps (\cite[Lemma~A.2]{cloninger2023lotwassmap}, building
+on~\cite[Corollary~4.4]{merigot2021}), which is also
+the source of the fractional exponent $p/(6p+16d)$,
+combined with the exact isometry of the LOT embedding
+under compatibility
+(\cite[Lemma~A.3]{cloninger2023lotwassmap}; see
+also~\cite{moosmuller2020linear,khurana2022supervised}).
+
+The remaining simplification is specific to our setting.
+Since the bi-Lipschitz constants $a,A$ of the flow family are
+fixed, we absorb them into the constant and write
+$C := 2\max\!\bigl\{1,\,C_{d,p,\Omega,a^{-1}\!A^p M_p}\bigr\}$.
+Because $\varepsilon\in(0,1]$ and
+$\frac{p}{6p+16d}\in(0,1)$, we have
+$\varepsilon \le \varepsilon^{p/(6p+16d)}$, so that
+\[
+  2\!\left(\varepsilon
+     + C_{d,p,\Omega,a^{-1}\!A^p M_p}\,
+       \varepsilon^{\frac{p}{6p+16d}}\right)
+  \le C\,\varepsilon^{\frac{p}{6p+16d}},
+\]
+which yields~\eqref{eq:lot-almost-isometry}.
+\end{proof}
+
+\subsection{Proof of Proposition~\ref{prop:plug-in-rate}}
+\label{app:proof-plugin-rate}
+\begin{proof}
+This is exactly \cite[Theorem~2.2]{deb2021rates} as seen in \cite[Theorem~B.1]{cloninger2023lotwassmap} applied with target measure $\mu_t$ and reference measure $\sigma$, under the stated Lipschitz regularity, compact support, and exponential moment assumptions.
+\end{proof}
+
+\subsection{Proof of Proposition~\ref{prop:mcdiarmid}}
+\label{app:proof-mcdiarmid}
+\begin{proof}
+This is exactly \cite[Theorem~B.3]{cloninger2023lotwassmap}. In our setting, $\{x_i\}_{i=1}^m$ are drawn i.i.d.\ from $\sigma$, the estimator $\hat T_\sigma^{\hat\mu}(\cdot;\gamma)$ is obtained by barycentric projection from transport plans computed by either linear programming or Sinkhorn (so $\gamma\in\{\gamma_{LP},\gamma_\beta\}$ as in \cite[Appendix~B.2]{cloninger2023lotwassmap}),
+and the bounded-support assumption $\mathrm{supp}(\hat\mu_u)\subset B(0,R)$ ensures $\|\hat T_\sigma^{\hat\mu_u}(\cdot;\gamma)\|\le R$ and hence the bounded differences constant needed for McDiarmid's inequality. \qedhere
+\end{proof}
+
+\subsection{Proof of Theorem~\ref{thm:finite-sample-lot}}
+\label{app:proof-finite-sample-lot}
+\begin{proof}
+Set
+\[
+a:=W_2(\mu_s,\mu_t),\qquad
+b:=\widehat{W}_{2,\sigma}^{\mathrm{LOT}}(\hat{\mu}_s,\hat{\mu}_t;\gamma).
+\]
+Since $\mathrm{supp}(\mu_u)\subset B(0,R)$ for all $u$, we have $a\le 2R$ and
+$b\le 2R$, hence $a+b\le 4R$. Using $|a^2-b^2|\le (a+b)|a-b|$ we obtain
+\[
+|a^2-b^2|\le 4R\,|a-b|.
+\]
+Next decompose
+\begin{align*}
+|a-b|
+&\le \bigl|W_2(\mu_s,\mu_t) - W_{2,\sigma}^{\mathrm{LOT}}(\mu_s,\mu_t)\bigr|
+\\
+&\quad + \bigl|W_{2,\sigma}^{\mathrm{LOT}}(\mu_s,\mu_t)
+- W_{2,\sigma}^{\mathrm{LOT}}(\hat{\mu}_s,\hat{\mu}_t;\gamma)\bigr|
+\\
+&\quad + \bigl|W_{2,\sigma}^{\mathrm{LOT}}(\hat{\mu}_s,\hat{\mu}_t;\gamma)
+- \widehat{W}_{2,\sigma}^{\mathrm{LOT}}(\hat{\mu}_s,\hat{\mu}_t;\gamma)\bigr|.
+\end{align*}
+The first term is bounded by $C\,\varepsilon^{p/(6p+16d)}$ by
+Proposition~\ref{prop:lot-almost-isometry}.
+For the second term, apply the triangle inequality in $L^2(\sigma)$:
+\[
+\Bigl|\|T_\sigma^{\mu_s}-T_\sigma^{\mu_t}\|_{L^2(\sigma)}
+-\|\hat{T}_\sigma^{\hat{\mu}_s}-\hat{T}_\sigma^{\hat{\mu}_t}\|_{L^2(\sigma)}\Bigr|
+\le \|T_\sigma^{\mu_s}-\hat{T}_\sigma^{\hat{\mu}_s}\|_{L^2(\sigma)}
++ \|T_\sigma^{\mu_t}-\hat{T}_\sigma^{\hat{\mu}_t}\|_{L^2(\sigma)}.
+\]
+The third term is bounded by $R\sqrt{2\log(2/\delta)/m}$ with probability at
+least $1-\delta$ by Proposition~\ref{prop:mcdiarmid} (cf.\
+\cite[Theorem~B.3]{cloninger2023lotwassmap}). Combining these inequalities and
+multiplying by the factor $4R$ yields \eqref{eq:combined-bound}. Finally, the
+$O_p$ rate for $\|T_\sigma^{\mu_u}-\hat{T}_\sigma^{\hat{\mu}_u}\|_{L^2(\sigma)}$
+follows by taking square roots in Proposition~\ref{prop:plug-in-rate}.
+\end{proof}
+
+\subsection{Proof of Lemma~\ref{lem:reconstruction}}
+\label{app:proof-reconstruction}
+\begin{proof}
+Consider the coupling $\pi := (\widehat{u},u)_\sharp \sigma$ on $\R^d\times\R^d$.
+Its marginals are $\widehat{\mu}$ and $\mu$, respectively, so
+\[
+W_2^2(\widehat{\mu},\mu)
+\;\le\; \int_{\R^d\times\R^d} \|x-y\|^2 \, d\pi(x,y)
+\;=\; \int_{\R^d} \|\widehat{u}(x)-u(x)\|^2 \, d\sigma(x)
+\;=\; \|\widehat{u}-u\|_{L^2(\sigma)}^2.
+\]
+
+The first inequality uses the fact that $\pi$ is a valid (but not necessarily optimal) coupling between $\widehat{\mu}$ and $\mu$, so the transport cost under $\pi$ is an upper bound for $W_2^2$.  The first equality uses the definition of pushforward to rewrite the integral over $\R^d \times \R^d$ as an integral over the reference space, and the second equality is the definition of the $L^2(\sigma)$ norm.
+
+Taking square roots yields~\eqref{eq:reconstruction-bound}.
+\end{proof}
+
+\subsection{Proof of Theorem~\ref{thm:velocity-approx}}
+\label{app:proof-velocity-approx}
+\begin{proof}
+We verify that the velocity operator $\mathcal{V}$ satisfies the hypotheses
+of the universality theorem (Theorem~\ref{thm:universality}) and then
+apply that result.
+
+\textbf{Causality and time-invariance}: By definition~\eqref{eq:velocity-operator}, $\mathcal{V}$ maps the past velocity sequence $(\Delta_0, \ldots, \Delta_{t-1})$ to $\Delta_t$. Since $\Delta_t$ depends only on $u_t$ and $u_{t+1}$, and these are determined by the past velocities through integration $u_t = u_0 + \sum_{s=0}^{t-1} \Delta_s$, the operator $\mathcal{V}$ is causal. Time-invariance follows because the same update rule maps any shifted input history to the correspondingly shifted output; equivalently, the filter commutes with time shifts along the trajectory. In other words, once the dynamics and reference measure are fixed, the rule that sends past LOT velocities to the next LOT velocity does not depend on the absolute time index.
+
+\textbf{Compact input set}:  Under Assumption~\ref{ass:regularity}, the measures $\mu_t$ have supports contained in $B(0,R_0)$, so the LOT coordinates satisfy
+$\|u_t\|_{L^2(\sigma)} \leq R_0$ and the LOT velocities $\|\Delta_t\|_{L^2(\sigma)} \leq 2R_0$ for all $t$. Hence the velocity sequences lie in a compact subset of $(\R^{dm})^{\mathbb{Z}}$ under the product topology.
+
+\textbf{Fading memory:} By assumption, $\mathcal{V}$ has fading memory on the compact set identified above. Sufficient conditions are discussed in Remark~\ref{rem:fading-memory} below.
+
+
+\textbf{Application of universality}: With causality, time-invariance, compactness, and fading memory verified, Theorem~\ref{thm:universality} applies with input dimension $q_{\mathrm{in}} = dm$, output dimension $q_{\mathrm{out}} = dm$, and the compact trajectory set as $\mathcal{X}$, yielding the existence of an ESN achieving~\eqref{eq:velocity-approx-bound}.
+\end{proof}
+
+\subsection{Proof of Corollary~\ref{cor:flow}}
+\label{app:proof-flow}
+\begin{proof}
+Since both $\widehat{u}_{t+1}$ and $u_{t+1}^{\mathrm{LOT}}$ are
+constructed by adding a velocity to the same empirical LOT coordinate
+$\hat{u}_t$, their difference isolates only the velocity prediction error:
+\[
+  \widehat{u}_{t+1} - u_{t+1}^{\mathrm{LOT}}
+  = (\hat{u}_t + \widehat{\Delta}_{t+1}) - (\hat{u}_t + \hat{\Delta}_{t+1})
+  = \widehat{\Delta}_{t+1} - \hat{\Delta}_{t+1}.
+\]
+Hence, by Lemma~\ref{lem:reconstruction},
+\[
+  W_2(\widehat{\mu}_{t+1}, \mu_{t+1}^{\mathrm{LOT}})
+  \;\leq\; \|\widehat{u}_{t+1} - u_{t+1}^{\mathrm{LOT}}\|_{L^2(\hat{\sigma}_m)}
+  \;=\; \|\widehat{\Delta}_{t+1} - \hat{\Delta}_{t+1}\|_{L^2(\hat{\sigma}_m)}
+  \;\leq\; \eta,
+\]
+where the last inequality is~\eqref{eq:velocity-approx-bound}.
+\end{proof}
+
+\subsection{Proof of Theorem~\ref{thm:error-decomp}}
+\label{app:proof-error-decomp}
+\begin{proof}
+By the triangle inequality in $W_2$:
+\begin{equation}\label{eq:error-triangle}
+  W_2(\widehat{\mu}_{t+1}, \mu_{t+1})
+  \;\leq\; W_2(\widehat{\mu}_{t+1}, \hat{\mu}_{t+1}^{\mathrm{LOT}})
+  \;+\; W_2(\hat{\mu}_{t+1}^{\mathrm{LOT}}, \mu_{t+1}),
+\end{equation}
+where $\hat{\mu}_{t+1}^{\mathrm{LOT}}$ is the LOT reconstruction from Definition~\ref{def:oracle-lot}.
+
+\textbf{Layer~3 (RC approximation).}
+By Corollary~\ref{cor:flow},
+\[
+  W_2(\widehat{\mu}_{t+1}, \mu_{t+1}^{\mathrm{LOT}})
+  \;\leq\;
+  \|\widehat{\Delta}_{t+1} - \hat{\Delta}_{t+1}\|_{L^2(\hat{\sigma}_m)}
+  \;\leq\; \eta,
+\]
+
+\textbf{Layers~1--2 (LOT embedding).}
+By Proposition~\ref{prop:lot-almost-isometry} and the finite-sample bounds
+of Theorem~\ref{thm:finite-sample-lot} (specifically, the plug in rate from Proposition~\ref{prop:plug-in-rate} and the reference discretization from Proposition~\ref{prop:mcdiarmid}), we have
+\[
+  W_2(\mu_{t+1}^{\mathrm{LOT}}, \mu_{t+1})
+  \;\leq\;
+  C\,\varepsilon^{p/(6p+16d)}
+  + O_p\!\left(\sqrt{r_d^{(N)} \log(1+N)^{t_{d,\alpha}}}\right)
+  + R_0\sqrt{\frac{2\log(2/\delta)}{m}}.
+\]
+Combining~\eqref{eq:error-triangle} with these two bounds yields~\eqref{eq:error-decomp}.
+\end{proof}
+
+\subsection{Proof of Proposition~\ref{prop:multistep}}
+\label{app:proof-multistep}
+\begin{proof}
+The predicted LOT position after $K$ steps is
+\[
+  \widehat{u}_{t+K}
+  = \hat{u}_t + \sum_{k=1}^{K} \widehat{\Delta}_{t+k},
+\]
+while the oracle (non-forecasted) LOT position is
+\[
+  \hat{u}_{t+K} = \hat{u}_t + \sum_{k=1}^{K} \hat{\Delta}_{t+k}.
+\]
+Therefore,
+\begin{equation}\label{eq:position-error-sum}
+  \|\widehat{u}_{t+K} - \hat{u}_{t+K}\|_{L^2(\hat{\sigma}_m)}
+  = \left\|\sum_{k=1}^{K}
+    (\widehat{\Delta}_{t+k} - \hat{\Delta}_{t+k})
+    \right\|_{L^2(\hat{\sigma}_m)}
+  \leq \sum_{k=1}^{K}
+    \|\widehat{\Delta}_{t+k}
+    - \hat{\Delta}_{t+k}\|_{L^2(\hat{\sigma}_m)}.
+\end{equation}
+During teacher-forced evaluation (where each $\widehat{\Delta}_{t+k}$ is
+computed from the reservoir driven by true inputs), each term is bounded by
+$\eta_1$, yielding~\eqref{eq:multistep-bound}.
+
+For the $W_2$ bound, we apply the triangle inequality:
+\[
+  W_2(\widehat{\mu}_{t+K}, \mu_{t+K})
+  \leq W_2(\widehat{\mu}_{t+K}, \hat{\mu}_{t+K}^{\mathrm{LOT}})
+  + W_2(\hat{\mu}_{t+K}^{\mathrm{LOT}}, \mu_{t+K}).
+\]
+By Lemma~\ref{lem:reconstruction}, the first term satisfies
+\[
+  W_2(\widehat{\mu}_{t+K}, \hat{\mu}_{t+K}^{\mathrm{LOT}})
+  \leq \|\widehat{u}_{t+K} - \hat{u}_{t+K}\|_{L^2(\hat{\sigma}_m)}
+  \leq K\,\eta_1.
+\]
+The second term is the LOT embedding error at a single time $t+K$. Since the oracle position $\hat{u}_{t+K}$ is computed directly as $\hat{T}_{\hat{\sigma}_m}^{\hat{\mu}_{t+K,N}}$ (the summation $\hat{u}_t + \sum_{k=1}^K \hat{\Delta}_{t+k}$ telescopes to $\hat{u}_{t+K}$), this gap is simply $e_{\mathrm{LOT}}$ evaluated at time $t+K$, yielding~\eqref{eq:multistep-w2}
+\end{proof}
+
+\section{Proof Sketch of Proposition~\ref{prop:esp}}
+\label{app:proof-esp}
+Let \(F(r,u)=\varphi(Ar+Bu+b)\). Then
+\(
+\|F(r,u)-F(\tilde r,u)\|
+\le L_\sigma\|A\|_2\,\|r-\tilde r\|.
+\)
+If \(L_\sigma\|A\|_2<1\), for fixed inputs the driven system is a contraction in state, yielding a unique fixed-point process (ESP) and exponential forgetting by Banach’s theorem.
+\qed
+
+\section{Additional finite-sample note}
+With finite samples for \(\sigma\) and \(\mu\), the barycentric projection \eqref{eq:baryproj-prelim} yields \(\widehat T_\sigma^\mu\) whose \(L^2(\sigma)\) error admits nonasymptotic rates of the form \(k^{-1/d}+m^{-1/2}\) (sample sizes for \(\mu\) and \(\sigma\)), and LOT distances concentrate under \(\varepsilon\)-compatibility \cite{deb2021rates,pooladian2021,cloninger2023lotwassmap}.
+
+\section{Experimental Parameters}
+\label{table}
+
+\begin{table}[t]
+\centering
+\caption{Experimental parameters for both benchmark systems.}
+\label{tab:params}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{llp{0.52\textwidth}}
+\toprule
+\textbf{Category} & \textbf{Parameter / Value(s)} & \textbf{Description} \\
+\midrule
+System & $N \in \{100,250,500,750,1000,1500\}$ & Particle count. \\
+System & $\Delta t = 0.02$ & Time step. \\
+System & $T = 400$ & Total frames per trajectory. \\
+System & $n_{\mathrm{cycles}} = 2$ & Ping--pong cycles. \\
+System & $\sigma_{\mathrm{obs}} = 0.02$ & Observation-noise standard deviation. \\
+\midrule
+LOT & $\alpha_{\mathrm{ref}} \in \{0.10,0.25,0.50,0.75,1.00\}$ & Reference-resolution factor. \\
+LOT & $R=\alpha_{\mathrm{ref}}N$ & Reference particle count. \\
+LOT & $\varepsilon = 0.01$ & Sinkhorn regularization. \\
+\midrule
+Reservoir & $\alpha_{\mathrm{res}} \in \{0.5,1.0,1.5,2.0,5.0\}$ & Reservoir-size scaling. \\
+Reservoir & $n_r=\alpha_{\mathrm{res}}N$ & Reservoir dimension. \\
+Reservoir & $\rho(W)=0.7$ & Spectral radius. \\
+Reservoir & $p=0.1$ & Connection density. \\
+Reservoir & $\sigma_{\mathrm{in}}=0.1$ & Input scaling. \\
+Reservoir & $\alpha_{\mathrm{leak}}=0.7$ & Leak rate. \\
+\midrule
+Training & $T_{\mathrm{train}}=50$ & Warm-up plus training steps. \\
+Training & $\lambda_{\mathrm{RAW}}=10^{-4}$ & Ridge regularization for RAW forecasting. \\
+Training & $\lambda_{\mathrm{LOT}}=10^{-6}$ & Ridge regularization for LOT forecasting. \\
+\midrule
+Evaluation & Forecast horizon $H=48$ & Autonomous forecast steps. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\end{document}

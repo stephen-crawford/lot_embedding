@@ -1,0 +1,47 @@
+# Jupyter
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Environments
+.env
+venv/
+ENV/
+env/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Large data files (optional - uncomment if needed)
+# *.npy
+# *.pkl
+# results/*.npy
+
+# ---- large generated artifacts ----
+notebooks/goes_data/seasonal_training/*.npy
+notebooks/eval_output/**/videos/*.gif
+notebooks/eval_output/**/videos/*.mp4
+notebooks/eval_output/**/videos/*.mov
+notebooks/eval_output/**/videos/*.avi
+
+# large generated artifacts
+notebooks/goes_data/seasonal_training/*.npy
+notebooks/eval_output/**/videos/*.gif
+notebooks/eval_output/**/videos/*.mp4
+
+# --- generated / large artifacts ---
+notebooks/goes_data/seasonal_training/*.npy
+notebooks/eval_output/**
+**/*.mp4
+**/*.mov
+**/*.npy
+
+# Virtual environment
+.venv/

@@ -1,0 +1,8 @@
+# Optional: satellite / gridded data for real-world LOT pipelines
+#   pip install -r requirements-realworld.txt
+-r requirements.txt
+goes2go>=0.2
+xarray>=2023.1.0
+netCDF4>=1.6.0
+h5py>=3.8.0
+pandas>=2.0.0
